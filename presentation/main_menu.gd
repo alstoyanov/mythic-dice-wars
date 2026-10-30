@@ -12,8 +12,13 @@ func _ready() -> void:
 	realm.modulate = Color(1, 1, 1, 0.75)
 	col.add_child(realm)
 	Ui.button(col, "New War", func() -> void: get_tree().change_scene_to_file("res://presentation/new_war.tscn"))
-	var quick := Ui.button(col, "Quick War", func() -> void: get_tree().change_scene_to_file("res://presentation/game_screen.tscn"))
+	var quick := Ui.button(col, "Quick War", func() -> void:
+		GameSettings.online_match_id = ""
+		get_tree().change_scene_to_file("res://presentation/game_screen.tscn"))
 	quick.tooltip_text = "Straight into a war with your last choices."
+	var wars := Ui.button(col, "Online Wars", func() -> void:
+		get_tree().change_scene_to_file("res://presentation/online_lobby.tscn" if Online.is_logged_in() else "res://presentation/account.tscn"))
+	wars.tooltip_text = "Wars of 2 to 6 players on the Mytholore server, with ratings and ranking points."
 	var book := Ui.button(col, "Book of the Gods", func() -> void:
 		GodBook.open(get_tree(), "res://presentation/main_menu.tscn"))
 	book.tooltip_text = "Every pantheon and its gods: their powers and their stories."

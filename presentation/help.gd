@@ -48,6 +48,18 @@ Your head start is shown under your name during the first round. [b]Classic[/b] 
 
 [b]Map.[/b] Zoom with the mouse wheel or a pinch, drag to look around, right-click to cancel a choice. Hover a target to see your chance to win and what the gods add.
 
+[b]Online wars[/b] (Online Wars in the main menu; a free Mytholore account). Wars of 2 to 6 players on the Mytholore server, which deals the land, rolls every die and keeps the rankings. Every player brings their own pantheon and gods, chosen in the online lobby; they stay secret until everyone has chosen.
+• [b]Quick wars:[/b] a ranked duel, or a ranked war of four, against players of about your rating.
+• [b]Open a war[/b] for 2 to 6 players: rated, friendly (not rated), or long-running (a day per turn). Anyone, your friends, or only the players you give its code to can join; it starts when it is full.
+• A turn has a time limit (60 seconds for each action; a day in long-running wars). When it runs out, your turn ends; in a long-running war you leave the war.
+• [b]Leaving[/b] a war (or losing the connection for good) counts as falling at that moment: your land stays for the others to take.
+• Every finished war can be watched again on the website (Matches): at any speed, paused, action by action or turn by turn, with what changed in each turn.
+
+[b]Ranking points.[/b] Your finishing place: the last pantheon standing is 1st, the others in reverse order of falling. You score 3 points for every player who finished below you, and the winner 3 more:
+• 2 players: 6 / 0.   3 players: 9 / 3 / 0.   4 players: 12 / 6 / 3 / 0.
+• 5 players: 15 / 9 / 6 / 3 / 0.   6 players: 18 / 12 / 9 / 6 / 3 / 0.
+Points only come from rated wars and never go down. Your [b]rating[/b] (Glicko-2, starting at 1500) also counts every war as a result against each other player: above them a win, below them a loss. The leaderboards are on the website (Rankings in the online lobby).
+
 [b]Battles.[/b] Every attack you make fills the screen: both armies' dice tumble out of their towers. Under each tray the total is taken apart: the dice, then every god's bonus or penalty by name. A die with a gold frame was a 1 that a god had rolled again. In Settings you choose how long the result stays, or to wait until you press Continue (or click anywhere). The computer's attacks, on you too, are shown only on the map: an arrow for a second, then the outcome. Turn on "Show the computer's battles" in Settings to see their dice as well.
 
 """ % [MatchState.RESERVE_CAP, MatchState.AWAKEN_CONQUESTS]

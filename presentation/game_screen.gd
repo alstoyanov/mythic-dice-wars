@@ -2,10 +2,16 @@ extends Control
 ## A war: the map, the players, the battle dice and the turn buttons. Runs the turns: waits for the
 ## human's clicks, plays the computer players' turns, animates battles and reinforcements, and shows
 ## the end. The rules are MatchState's; this screen only asks and shows.
+##
+## Online (GameSettings.online_match_id set by the online lobby) the server runs the rules: an
+## OnlineWar mirrors its state into `state`, the player's clicks become actions sent to it, and every
+## action it announces (the player's own and the other players') is shown here one after another,
+## with the same animations as a local war.
 
 var state: MatchState
-var human: int = -1  ## the human's player index in turn order
+var human: int = -1  ## the human's player index in turn order (online: their seat)
 var rng := RandomNumberGenerator.new()
+var online: OnlineWar  ## the online war, or null for a local one
 
 var _layout: GameLayout
 var _view: RealmView
@@ -14,17 +20,25 @@ var _players: PlayerPanel
 var _end: EndOverlay
 var _status: Label
 var _gods_line: Label
+var _clock: Label  ## online: the time left in the player's turn
 var _banner: Label
 var _end_turn: Button
 var _miracle_buttons: Dictionary = {}  ## god id -> Button
 var _busy := false
 var _miracle := ""  ## the god whose miracle is being aimed, "" when none
 var _over := false
+var _pumping := false  ## online: showing the actions the server announced
+var _waiting: Control  ## online: the panel shown until the war begins
+var _wait_text: Label
+var _clock_wait := 0.0
 
 
 func _ready() -> void:
 	Ui.setup_screen(self, false)
 	rng.randomize()
+	if GameSettings.online_match_id != "":
+		_start_online(GameSettings.online_match_id)
+		return
 	_new_match()
 	_build_ui()
 	_view.viewer = human  # under fog of war the map and the player list show what the player sees
@@ -98,6 +112,8 @@ func _build_ui() -> void:
 	add_child(_layout)
 	_status = _layout.add_text(17)
 	_gods_line = _layout.add_text(13, 0.8)
+	if online != null:
+		_clock = _layout.add_text(13, 0.9)
 	_battle = BattlePanel.new()  # over the whole screen, above the layout
 	add_child(_battle)
 	var me := state.players[human]
@@ -187,11 +203,20 @@ func _run_ai_turn() -> void:
 func _attack(from: int, to: int, speed: float) -> void:
 	# Under fog of war a battle is shown only if the player sees at least one of the two territories.
 	var seen := _view.is_seen(from) or _view.is_seen(to)
+	var result := state.attack(from, to, rng)
+	await _show_battle(result, speed, seen)
+
+
+## Shows a battle that has been fought (`state` is already after it): the battle screen for the
+## player's own attacks (or every battle, if chosen in Settings), else the arrow on the map; then the
+## outcome on the map.
+func _show_battle(result: Dictionary, speed: float, seen: bool) -> void:
+	var from: int = result["from"]
+	var to: int = result["to"]
 	if seen:
 		_view.selected = from if _view.is_seen(from) else -1
 		_view.arrow = Vector2i(from, to)
 	_view.targets.clear()
-	var result := state.attack(from, to, rng)
 	var involves_player: bool = result["attacker"] == human or result["defender"] == human
 	if not seen:  # a battle somewhere in the fog: nothing to show
 		pass
@@ -206,7 +231,7 @@ func _attack(from: int, to: int, speed: float) -> void:
 			hold = GameSettings.HOLDS[0] / speed  # no waiting on battles between rivals
 		await _battle.hold(hold)
 		await _battle.hide_panel(speed)
-	else:  # the computer's attack: only the arrow on the map for a second, then the outcome
+	else:  # another player's attack: only the arrow on the map for a second, then the outcome
 		await get_tree().create_timer(GameSettings.MAP_BATTLE).timeout
 	_view.arrow = Vector2i(-1, -1)
 	_view.selected = -1
@@ -237,9 +262,16 @@ func _attack(from: int, to: int, speed: float) -> void:
 
 
 func _cast(god_id: String, target: int, speed: float) -> void:
+	var caster := state.current
 	var r := state.cast_miracle(god_id, target)
+	await _show_cast(r, caster, speed)
+
+
+## Shows a miracle that has been cast (`state` is already after it).
+func _show_cast(r: Dictionary, caster: int, speed: float) -> void:
+	var target: int = r["target"]
 	Sound.play("miracle")
-	var g := GodCatalog.god(god_id)
+	var g := GodCatalog.god(r["god"])
 	var colors := {"smite": Color(0.75, 0.85, 1.0), "bless": Color(0.6, 1.0, 0.6), "ward": Color(0.7, 0.9, 1.0)}
 	_view.flash(target, colors[r["kind"]], 0.9 / speed)
 	match r["kind"]:
@@ -253,13 +285,18 @@ func _cast(god_id: String, target: int, speed: float) -> void:
 	_view.refresh()
 	var text: String = ("%+d" % r["change"]) if r["kind"] != "ward" else "Ward"
 	_view.float_text(target, text, colors[r["kind"]])
-	_say("%s calls on %s: %s." % [state.players[state.current].name, g["name"], g["boon_name"]])
+	_say("%s calls on %s: %s." % [state.players[caster].name, g["name"], g["boon_name"]])
 	_update_hud()
 	await get_tree().create_timer(0.8 / speed).timeout
 
 
 func _finish_turn(speed: float) -> void:
 	var r := state.end_turn(rng)
+	await _show_end_turn(r, speed)
+
+
+## Shows the end of a turn (`state` is already after it): tribute and reinforcements.
+func _show_end_turn(r: Dictionary, speed: float) -> void:
 	for t in r["tribute"]:
 		_view.float_text(t, "-%d tribute" % r["tribute"][t], Color(1.0, 0.55, 0.5))
 		_view.play_fx("crumble", t, 0.6, 30.0, 12.0)
@@ -272,6 +309,8 @@ func _finish_turn(speed: float) -> void:
 
 
 func _check_end() -> bool:
+	if online != null:
+		return _over  # an online war ends when the server says so (_online_end)
 	if _over:
 		return true
 	var w := state.winner()
@@ -300,6 +339,8 @@ func _check_end() -> bool:
 # --- Human input --------------------------------------------------------------------------------
 
 func _human_turn() -> bool:
+	if online != null:
+		return not _busy and not _over and not _pumping and online.can_act()
 	return not _busy and not _over and state.current == human
 
 
@@ -317,6 +358,10 @@ func _on_territory_clicked(t: int) -> void:
 		var god_id := _miracle
 		_miracle = ""
 		_view.targets.clear()
+		if online != null:
+			online.cast(god_id, t)
+			_update_hud()
+			return
 		_busy = true
 		await _cast(god_id, t, GameSettings.animation_factor())
 		_busy = false
@@ -343,6 +388,13 @@ func _on_territory_clicked(t: int) -> void:
 	var reason := state.attack_block_reason(sel, t)
 	if reason != "":
 		_say(reason)
+		return
+	if online != null:  # the server fights the battle; it comes back as an announced action
+		_view.arrow = Vector2i(sel, t)
+		_view.targets.clear()
+		_view.queue_redraw()
+		online.attack(sel, t)
+		_update_hud()
 		return
 	_busy = true
 	await _attack(sel, t, GameSettings.animation_factor())
@@ -392,6 +444,8 @@ func _select(t: int) -> void:
 
 
 func _cancel() -> void:
+	if _view == null:
+		return
 	_view.selected = -1
 	_view.targets.clear()
 	_miracle = ""
@@ -444,6 +498,10 @@ func _on_end_turn() -> void:
 	if not _human_turn():
 		return
 	_cancel()
+	if online != null:
+		online.end_turn()
+		_update_hud()
+		return
 	_busy = true
 	await _finish_turn(GameSettings.animation_factor())
 	_busy = false
@@ -469,18 +527,26 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _leave() -> void:
+	if online != null:
+		_leave_online()
+		return
 	get_tree().change_scene_to_file("res://presentation/main_menu.tscn")
 
 
 # --- HUD ----------------------------------------------------------------------------------------
 
 func _say(text: String) -> void:
-	_status.text = text
+	if _status != null:
+		_status.text = text
+	elif _wait_text != null:
+		_wait_text.text = text
 
 
 func _update_hud() -> void:
+	if _players == null:
+		return
 	_players.update(state)
-	var mine := state.current == human and not _busy and not _over
+	var mine := _human_turn()
 	if _end_turn != null and is_instance_valid(_end_turn):
 		_end_turn.disabled = not mine
 		_end_turn.text = "End turn (+%d)" % state.reinforcement_preview(human) if not state.players[human].eliminated else "End turn"
@@ -501,3 +567,218 @@ func _show_banner(text: String, speed: float) -> void:
 	tw.tween_interval(1.0 / speed)
 	tw.tween_property(_banner, "modulate:a", 0.0, 0.3 / speed)
 	await tw.finished
+
+
+# --- Online -------------------------------------------------------------------------------------
+
+func _start_online(match_id: String) -> void:
+	_waiting = Control.new()
+	_waiting.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_waiting)
+	var col := Ui.centered_column(_waiting, 14)
+	Ui.title(col, "Online war")
+	_wait_text = Label.new()
+	_wait_text.text = "Connecting…"
+	_wait_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_wait_text)
+	Ui.wrap_to_screen(_wait_text)
+	var gods := Label.new()
+	gods.text = "You: %s — %s and %s" % [GodCatalog.pantheon(GameSettings.pantheon)["name"],
+		GodCatalog.god(GameSettings.primary).get("name", ""), GodCatalog.god(GameSettings.secondary).get("name", "")]
+	gods.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gods.modulate = Color(1, 1, 1, 0.75)
+	col.add_child(gods)
+	Ui.button(col, "Leave", _leave_online)
+	online = OnlineWar.new(match_id)
+	add_child(online)
+	online.waiting.connect(func(text: String) -> void:
+		if _wait_text != null:
+			_wait_text.text = text)
+	online.war_ready.connect(_online_begin)
+	online.step_arrived.connect(_pump)
+	online.resynced.connect(func() -> void:
+		if _view != null and not _pumping:
+			_cancel()
+			_view.refresh()
+			_update_hud()
+			_online_prompt())
+	online.notice.connect(func(text: String) -> void:
+		if text != "":
+			_say(text))
+	online.finished.connect(func() -> void:
+		if not _pumping:
+			_online_end())
+	online.failed.connect(_online_failed)
+
+
+## The war has begun: the screen is built from the server's realm and state.
+func _online_begin() -> void:
+	state = online.state
+	human = online.seat
+	if _waiting != null:
+		_waiting.queue_free()
+		_waiting = null
+		_wait_text = null
+	_build_ui()
+	_view.setup(state, Looks.current()["terrain"])
+	_update_hud()
+	_online_prompt()
+	_pump()
+
+
+## Shows the actions the server announced, one after another (the other players' and the player's own).
+func _pump() -> void:
+	if _pumping or online == null or _view == null:
+		return
+	_pumping = true
+	_update_hud()
+	while online.has_steps():
+		var step := online.next_step()
+		var mine: bool = step["seat"] == human
+		var speed := GameSettings.animation_factor() if mine else maxf(GameSettings.animation_factor(), 2.0)
+		match str(step["kind"]):
+			"attack":
+				await _show_battle(step["result"], speed, true)
+			"miracle":
+				await _show_cast(step["result"], step["seat"], speed)
+			"end":
+				if bool(step.get("timeout", false)) and not mine:
+					_say("%s ran out of time." % state.players[step["seat"]].name)
+				await _show_end_turn(step["result"], speed)
+			"left":
+				_view.refresh()
+				var why: String = {"resigned": "has left the war", "disconnected": "lost the connection and left the war",
+					"timeout": "missed the deadline and left the war"}.get(str(step.get("why", "")), "has left the war")
+				await _show_banner("%s %s" % [state.players[step["seat"]].name, why], speed)
+			_:
+				_view.refresh()
+		_update_hud()
+	_pumping = false
+	_update_hud()
+	if online.stage == OnlineWar.Stage.OVER:
+		_online_end()
+	else:
+		_online_prompt()
+
+
+## What to do now: the player's turn (and its time), or whose turn it is.
+func _online_prompt() -> void:
+	if _over or state == null:
+		return
+	if state.players[human].eliminated:
+		_say("Your pantheon has fallen. You can watch the war to its end, or leave.")
+	elif online.can_act():
+		var left := state.attacks_left(human)
+		_say(_head_start_note() + "Your turn. Choose one of your territories with 2 or more dice, then a neighbour to attack."
+			+ (" (%d attacks this turn.)" % left if left >= 0 else ""))
+	else:
+		_say("%s is moving…" % state.players[state.current].name)
+
+
+func _process(delta: float) -> void:
+	if online == null or _clock == null:
+		return
+	_clock_wait -= delta
+	if _clock_wait > 0.0:
+		return
+	_clock_wait = 0.5
+	var left := online.seconds_left()
+	if left < 0 or _over:
+		_clock.text = ""
+	elif state.current == human and not state.players[human].eliminated:
+		_clock.text = "Your time: %s" % _duration(left)
+		_clock.modulate = Color(1, 0.6, 0.5) if left <= 10 else Color(1, 1, 1, 0.9)
+	else:
+		_clock.text = "%s's time: %s" % [state.players[state.current].name, _duration(left)]
+		_clock.modulate = Color(1, 1, 1, 0.7)
+
+
+static func _duration(s: int) -> String:
+	if s >= 3600:
+		return "%d h %02d min" % [s / 3600, (s % 3600) / 60]
+	if s >= 60:
+		return "%d:%02d" % [s / 60, s % 60]
+	return "%d s" % s
+
+
+## The war is over: the player's place, the points and the rating it brought.
+func _online_end() -> void:
+	if _over:
+		return
+	_over = true
+	_busy = true
+	if _view == null:  # it ended before it began (everyone else left while choosing)
+		_online_failed("The war ended before it began.")
+		return
+	_view.interactive = false
+	for b in _layout.buttons.get_children():
+		b.queue_free()
+	_layout.add_button("Online wars", func() -> void: _to_lobby())
+	_layout.add_button("Replay on the website", func() -> void:
+		OS.shell_open(Online.web_url("/account/matches/%s/%s" % [Online.GAME_ID, online.match_id])))
+	_layout.add_button("Main menu", func() -> void:
+		GameSettings.online_match_id = ""
+		get_tree().change_scene_to_file("res://presentation/main_menu.tscn"))
+	var r := online.my_result()
+	var place: int = r.get("place", 0)
+	var n: int = r.get("players", state.players.size())
+	var parts: Array[String] = []
+	if r.get("rated", false):
+		parts.append("+%d ranking points" % r.get("points", 0))
+		if r.has("rating_after"):
+			parts.append("rating %d → %d (%+d)" % [r["rating_before"], r["rating_after"], r["rating_after"] - r["rating_before"]])
+	else:
+		parts.append("a friendly war: no points or rating")
+	var detail := " · ".join(parts)
+	if place == 1:
+		Sound.play_later("win", 0.4)
+		_end.play_win("Victory!", "You won a war of %d. %s" % [n, detail])
+		_say("You conquered the realm in %d rounds." % state.round_number)
+	elif place > 0:
+		Sound.play_later("lose", 0.4)
+		_end.play_lose("%s of %d" % [_ordinal(place), n], detail)
+		_say("The war is over: you finished %s of %d." % [_ordinal(place), n])
+	else:
+		_end.play_lose("The war was cancelled", "No result was recorded.")
+		_say("The war was cancelled.")
+
+
+func _online_failed(message: String) -> void:
+	_over = true
+	if _waiting == null:
+		_waiting = Control.new()
+		_waiting.set_anchors_preset(Control.PRESET_FULL_RECT)
+		add_child(_waiting)
+		var col := Ui.centered_column(_waiting, 14)
+		Ui.title(col, "Online war")
+		_wait_text = Label.new()
+		_wait_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(_wait_text)
+		Ui.wrap_to_screen(_wait_text)
+		Ui.button(col, "Online wars", _to_lobby)
+	_wait_text.text = message
+
+
+## Leaving a war in progress: confirm, then resign (the player is placed below everyone still fighting).
+func _leave_online() -> void:
+	var playing := online != null and online.stage in [OnlineWar.Stage.PLAYING, OnlineWar.Stage.CHOOSING] \
+		and not _over and (state == null or not state.players[human].eliminated)
+	if not playing:
+		_to_lobby()
+		return
+	var ask := ConfirmationDialog.new()
+	ask.title = "Leave the war?"
+	ask.dialog_text = "If you leave, you resign: you are placed below everyone still fighting, and your land stays for the others to take."
+	ask.ok_button_text = "Resign and leave"
+	ask.cancel_button_text = "Stay"
+	add_child(ask)
+	ask.confirmed.connect(func() -> void:
+		online.resign()
+		await get_tree().create_timer(0.3).timeout
+		_to_lobby())
+	ask.popup_centered()
+
+
+func _to_lobby() -> void:
+	GameSettings.online_match_id = ""
+	get_tree().change_scene_to_file("res://presentation/online_lobby.tscn")

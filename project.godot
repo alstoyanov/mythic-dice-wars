@@ -24,6 +24,7 @@ config/windows_native_icon="res://assets/branding/icon.ico"
 
 AppWindow="*res://presentation/app_window.gd"
 Sound="*res://presentation/sound.gd"
+Online="*res://session/online.gd"
 
 [display]
 
@@ -31,14 +32,14 @@ window/size/viewport_width=1280
 window/size/viewport_height=800
 window/handheld/orientation=6
 
-[rendering]
-
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
-textures/vram_compression/import_etc2_astc=true
-
 [importer_defaults]
 
 texture={
 "mipmaps/generate": true
 }
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

@@ -179,7 +179,7 @@ The core mechanic belongs to a well-loved genre: territory dice battles, with ri
 | Seat setup | each seat: Human (hotseat) / Computer / Closed | [MVP] |
 | Teams | free-for-all / 2v2 / 2v2v2 / 4v4 | [LATER] |
 | Fog of war | Off / On (see only your land and its neighbours, §4.8) | [POC] |
-| Turn timer | off / 30 s / 60 s | [LATER] (online) |
+| Turn timer | online: 60 s per action (a day in long-running wars) | [POC] (online) |
 | Seed | random / typed (shareable map codes) | [MVP] |
 
 ### 4.8 Fog of war [POC]
@@ -488,6 +488,8 @@ Boot → Splash (key art + title, tap to skip)
 | **New War** | 7 pantheon tiles (die face + name, framed when chosen; picking one re-themes the screen; the tiles grow with the text), Players, Realm size, Board, Rivals, Secondary god timing, Turn order, Fog of war. On a wide screen the tiles stand beside the options (4, 3 or 2 to a row, whatever fits), so the panel fits a laptop window; on a narrow one above them (the panel scrolls). ◀ / ▶. | [POC] |
 | **Choose your gods** | Two rows of god cards (portrait, epithet, boon, bane), the awakening note. ◀ / ▶ Start. | [POC] |
 | **Book of the Gods** | To help choose a pantheon (from the main menu, or the book button in New War). A tab per pantheon; the realm's name and a few words about it; its 3 primary and 3 secondary gods as portraits. The chosen god: a large portrait, name in the realm's title font, epithet and role, boon and bane as in a war, then their story and a "did you know?" (scrolls where the screen is short). Browsing a pantheon shows its realm's look; leaving puts the player's own pantheon back. **Play with <god>** takes that pantheon and god into New War. The stories come from Tile Shifter's legends: `python tools/import_lore.py` copies them into `core/god_lore.gd`. | [POC] |
+| **Online account** | Sign in with Google through the browser, or email and password; the server address (for a local server). As in Chasm of Knights, without cloud saves. | [POC] |
+| **Online wars** (lobby) | The pantheon and gods for the next war; quick wars (ranked duel, ranked war of four) with a search screen; the open wars (*3 of 4 players*) and joining by code; *Open a war* (2–6 players, rated / friendly / long-running, realm, board, turn order, awakening, who can join) and its waiting room with the code; wars in progress to return to; Rankings (the website). Then the game screen plays the war (ONLINE.md). | [POC] |
 | **War** | §9.3 | [POC] |
 | **Result** | Banner + confetti/ash over the map; New war / Main menu. [MVP] adds stats: rounds, conquests, biggest roll, luck meter (rolled vs expected), a "war chronicle" timeline. | [POC] basic |
 | **Pause [MVP]** | Resume, Rules, Settings, Concede, Save & quit. | — |
@@ -554,7 +556,7 @@ All strings go through `tr()` (as in Chasm of Knights). Planned first languages:
 | **Hotseat** | 2–8 humans (and computers) on one device. A "pass the device" screen hides nothing (no fog), but it marks whose turn it is. | [MVP] |
 | **Daily Omen** | A seeded map + fixed gods per day, with a score (rounds to victory, territories lost). Shareable result line. | [MVP] |
 | **Campaign: Eras of Myth** | Per pantheon, 6–8 chapters following its myths (*Titanomachy*, *Ragnarök*, *the Contendings of Horus and Set*, *the Hero Twins in Xibalba*…). Scripted maps, special rules, boss gods with unique powers. Winning unlocks gods, dice skins and realm themes. | [LATER] |
-| **Online** | Via the **Mytholore Game Server** (as Chasm of Knights): ranked 1v1 and casual 4-player FFA, friends, open games, cloud saves. The server runs the rules (MatchState is pure and deterministic, so it ports to the server). | [LATER] |
+| **Online** | Via the **Mytholore Game Server** (as Chasm of Knights): wars of **2 to 6 players**: a ranked duel and a ranked war of four (matchmaking), and rooms anyone, friends or only those with the code can join (rated, friendly, or long-running at a day per turn). Every player brings their own pantheon and gods. The server runs the rules (a Go port of MatchState), keeps a rating (Glicko-2) and **ranking points per finishing place** (3 for every player below you, +3 for the winner), and stores every war in one byte per action for **replays** on the website (any speed, paused, action by action or turn by turn, with what changed in each turn); an admin switch keeps only results. No cloud saves. See [ONLINE.md](ONLINE.md). | [POC] |
 
 **Progression [LATER]:** a *Pantheon Codex* (each god's lore page unlocks on first win with them), mastery badges per god (win with it, win without losing a territory, win in ≤ 10 rounds), and cosmetic dice skins usable with any pantheon. No power progression: gods are unlocked, never upgraded.
 
@@ -685,7 +687,7 @@ A release APK for a store needs a release keystore (Project > Export > Android >
 - Responsive: landscape and portrait (checked at 1280 × 800 and 540 × 960).
 
 ### 14.2 What is not (yet)
-Hotseat, saves, a pause menu, music, localisation, colour-blind emblems, campaign, online, exports. The player list is hidden on a phone held upright.
+Hotseat, saves, a pause menu, music, localisation, colour-blind emblems, campaign, exports. The player list is hidden on a phone held upright.
 
 ### 14.3 Running it
 ```sh
@@ -706,7 +708,7 @@ godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=540x960] [
 | **M2 — Content complete (launch set)** | 7 pantheons × 12 gods, balance at 2,000-war sims + playtests, Daily Omen, localisation (EN + 3), exports (Win, Web, Android). | 8–10 weeks |
 | **M3 — Launch** | Store pages, trailer (from the screenshot test), analytics (opt-in), crash reporting. | 2 weeks |
 | **M4 — Campaign** | Eras of Myth for Greek and Norse, boss gods, unlocks. | 6–8 weeks |
-| **M5 — Online** | Mytholore server integration: ranked 1v1, casual FFA, friends, cloud saves. | 6 weeks |
+| **M5 — Online** | Done as a POC (ONLINE.md): ranked duel and war of four, rooms of 2–6, ranking points, replays. Left: fog of war online (per-player events), spectators, seasons, push notifications for long-running wars. | 3 weeks |
 | **M6+** | New pantheons from the existing dice skins (Aztec, Celtic, Japanese, Slavic…), crossover wars, relics and shrines. | ongoing |
 
 ---

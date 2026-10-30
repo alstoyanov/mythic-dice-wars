@@ -34,6 +34,16 @@ static var awakening: String = "milestone"  ## when secondary gods wake: "milest
 static var head_start: bool = true  ## later players get a head start against the first-mover advantage
 static var fog: bool = false  ## fog of war: everyone sees only their own territories and their neighbours
 
+## Online: the war the online lobby sends the game screen to (not saved; "" = a local war).
+static var online_match_id: String = ""
+# The last choices for an online war the player opens (the online lobby).
+const ONLINE_KINDS := ["room", "room-friendly", "room-async"]  ## rated, friendly, long-running (a day per turn)
+static var online_players: int = 4  ## 2..6
+static var online_size: String = "medium"
+static var online_grid: String = "square"
+static var online_kind: String = "room"
+static var online_visibility: String = "public"  ## public | friends | private
+
 
 static func ensure_loaded() -> void:
 	if _loaded:
@@ -65,6 +75,17 @@ static func ensure_loaded() -> void:
 	awakening = str(cfg.get_value("war", "awakening", awakening))
 	head_start = bool(cfg.get_value("war", "head_start", head_start))
 	fog = bool(cfg.get_value("war", "fog", fog))
+	online_players = clampi(int(cfg.get_value("online", "players", online_players)), 2, 6)
+	online_size = str(cfg.get_value("online", "size", online_size))
+	if not MapGenerator.SIZES.has(online_size):
+		online_size = "medium"
+	online_grid = RealmMap.GRID_HEX if str(cfg.get_value("online", "grid", online_grid)) == RealmMap.GRID_HEX else RealmMap.GRID_SQUARE
+	online_kind = str(cfg.get_value("online", "kind", online_kind))
+	if not ONLINE_KINDS.has(online_kind):
+		online_kind = "room"
+	online_visibility = str(cfg.get_value("online", "visibility", online_visibility))
+	if not ["public", "friends", "private"].has(online_visibility):
+		online_visibility = "public"
 	_fix_gods()
 
 
@@ -111,4 +132,9 @@ static func save() -> void:
 	cfg.set_value("war", "awakening", awakening)
 	cfg.set_value("war", "head_start", head_start)
 	cfg.set_value("war", "fog", fog)
+	cfg.set_value("online", "players", online_players)
+	cfg.set_value("online", "size", online_size)
+	cfg.set_value("online", "grid", online_grid)
+	cfg.set_value("online", "kind", online_kind)
+	cfg.set_value("online", "visibility", online_visibility)
 	cfg.save(SETTINGS_PATH)
