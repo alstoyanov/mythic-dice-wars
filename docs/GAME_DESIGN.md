@@ -571,6 +571,8 @@ godot --headless --path . -s tests/sim_test.gd -- --matches=600
 
 **Target:** every god between **0.8 and 1.25** over 2,000+ wars, at the Strategist level. Then a human playtest pass, because AIs under-use some powers (miracles, defensive play).
 
+**Power ranking** ([power_ranking.md](power_ranking.md)): `python tools/run_balance.py` plays 60,000 duels and 20,000 four-player wars between Strategists in parallel (`tests/balance_sim.gd`, about 12 minutes on 16 threads) and `tools/balance_report.py` fits a rating to every god, pair and pantheon (each god judged apart from its partner, its opponents and the turn order). The report has the pantheon balance, pantheon-vs-pantheon results, rankings of gods and pairs (with synergy), and the counters: gods that do better against particular gods than their ratings explain. Run it again after changing a god; `--report-only` rewrites the report from the last data.
+
 ### 12.2 Power budget (guideline)
 | Effect | ≈ points |
 |---|---|
