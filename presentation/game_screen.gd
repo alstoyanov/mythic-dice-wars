@@ -76,12 +76,6 @@ func _build_ui() -> void:
 	_view.cancelled.connect(_cancel)
 	_view.hovered.connect(_on_hovered)
 
-	_battle = BattlePanel.new()
-	_battle.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_battle.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_battle.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_battle.offset_bottom = -6.0
-	board.add_child(_battle)
 
 	_banner = Label.new()
 	_banner.theme_type_variation = "TitleLabel"
@@ -101,6 +95,8 @@ func _build_ui() -> void:
 	add_child(_layout)
 	_status = _layout.add_text(17)
 	_gods_line = _layout.add_text(13, 0.8)
+	_battle = BattlePanel.new()  # over the whole screen, above the layout
+	add_child(_battle)
 	var me := state.players[human]
 	_gods_line.text = "%s — %s   ·   %s — %s" % [GodCatalog.god(me.primary)["name"], GodCatalog.god(me.primary)["boon_name"],
 		GodCatalog.god(me.secondary)["name"], GodCatalog.god(me.secondary)["boon_name"]]
@@ -111,12 +107,14 @@ func _build_ui() -> void:
 			continue
 		var g := GodCatalog.god(god_id)
 		var b := _layout.add_button("%s (%d)" % [g["boon_name"], m["cost"]], _on_miracle.bind(god_id))
+		_icon(b, {"smite": "smite", "bless": "bless", "ward": "ward"}[m["kind"]])
 		b.tooltip_text = g["boon_text"]
 		_miracle_buttons[god_id] = b
 	var center := _layout.add_button("Re-centre", func() -> void: _view.reset_view())
 	center.tooltip_text = "Zoom: mouse wheel or pinch. Pan: drag."
 	_layout.add_button("Leave", _leave)
 	_end_turn = _layout.add_button("End turn", _on_end_turn)
+	_icon(_end_turn, "end_turn")
 	_end_turn.custom_minimum_size.x = 150
 
 
@@ -167,24 +165,38 @@ func _attack(from: int, to: int, speed: float) -> void:
 	_view.targets.clear()
 	_view.arrow = Vector2i(from, to)
 	var result := state.attack(from, to, rng)
-	await _battle.play(result, state, speed)
+	var involves_player: bool = result["attacker"] == human or result["defender"] == human
+	if involves_player or GameSettings.hold_rivals:
+		await _battle.play(result, state, speed)
+		var hold := GameSettings.result_hold(involves_player)
+		if hold != GameSettings.WAIT and not involves_player:
+			hold /= speed  # battles between rivals follow the animation speed
+		if hold == GameSettings.WAIT:
+			_say("Press Continue (or click anywhere, Enter or Space).")
+		await _battle.hold(hold)
+		await _battle.hide_panel(speed)
+	else:  # a battle between rivals: only the arrow on the map, then the outcome
+		await get_tree().create_timer(0.45 / speed).timeout
 	_view.arrow = Vector2i(-1, -1)
 	_view.selected = -1
 	_view.refresh()
 	if result["won"]:
 		Sound.play("conquer")
+		_view.play_fx("dust", to, 0.8 / speed, 60.0, 10.0)
 		_view.flash(to, Color(1.0, 0.9, 0.5), 0.7 / speed)
 	else:
 		Sound.play("repelled")
+		_view.play_fx("dust", from, 0.6 / speed, 40.0, 8.0)
 		_view.flash(from, Color(0.1, 0.1, 0.1), 0.6 / speed)
 		for t in result["gains"]:
 			_view.float_text(t, "+%d" % result["gains"][t], Color(0.7, 1.0, 0.7))
 	for t in result["losses"]:
 		_view.float_text(t, "-%d" % result["losses"][t], Color(1.0, 0.55, 0.5))
-	_battle.hide_panel(speed)
+		_view.play_fx("crumble", t, 0.6, 30.0, 12.0)
 	_update_hud()
 	if result["awakened"]:
 		var a := state.players[result["attacker"]]
+		_view.play_fx("motes", to, 1.2, 80.0, 20.0)
 		await _show_banner("%s awakens for %s!" % [GodCatalog.god(a.secondary)["name"], a.name], speed)
 	if result["eliminated"] >= 0:
 		var fallen := state.players[result["eliminated"]]
@@ -197,6 +209,14 @@ func _cast(god_id: String, target: int, speed: float) -> void:
 	var g := GodCatalog.god(god_id)
 	var colors := {"smite": Color(0.75, 0.85, 1.0), "bless": Color(0.6, 1.0, 0.6), "ward": Color(0.7, 0.9, 1.0)}
 	_view.flash(target, colors[r["kind"]], 0.9 / speed)
+	match r["kind"]:
+		"smite":
+			_view.play_fx("lightning", target, 0.7, 80.0, 34.0)
+			_view.play_fx("dust", target, 0.8, 50.0, 8.0)
+		"bless":
+			_view.play_fx("motes", target, 1.0, 60.0, 18.0)
+		"ward":
+			_view.play_fx("ward_dome", target, 0.9, 46.0, 12.0)
 	_view.refresh()
 	var text: String = ("%+d" % r["change"]) if r["kind"] != "ward" else "Ward"
 	_view.float_text(target, text, colors[r["kind"]])
@@ -209,6 +229,7 @@ func _finish_turn(speed: float) -> void:
 	var r := state.end_turn(rng)
 	for t in r["tribute"]:
 		_view.float_text(t, "-%d tribute" % r["tribute"][t], Color(1.0, 0.55, 0.5))
+		_view.play_fx("crumble", t, 0.6, 30.0, 12.0)
 	for t in r["placed"]:
 		_view.float_text(t, "+%d" % r["placed"][t], Color(0.75, 1.0, 0.7), 1.0)
 	if not r["placed"].is_empty():
@@ -350,7 +371,17 @@ func _on_hovered(t: int) -> void:
 	if _view.targets.has(t):
 		var chance := DiceOdds.attack_chance(state, _view.selected, t)
 		var percent := ">99%" if chance > 0.995 else ("<1%" if chance < 0.005 else "%d%%" % roundi(chance * 100.0))
-		_say("%d dice against %d — %s chance to win." % [state.dice[_view.selected], state.dice[t], percent])
+		var text := "%d dice against %d — %s chance to win." % [state.dice[_view.selected], state.dice[t], percent]
+		# What the gods add to this fight, both sides.
+		var mods := state.attack_modifiers(_view.selected, t)
+		var parts: Array[String] = []
+		for m in mods["attack"]:
+			parts.append("you %+d %s" % [m[1], m[0]])
+		for m in mods["defense"]:
+			parts.append("they %+d %s" % [m[1], m[0]])
+		if not parts.is_empty():
+			text += "  (" + "; ".join(parts) + ")"
+		_say(text)
 
 
 func _on_miracle(god_id: String) -> void:
@@ -379,6 +410,24 @@ func _on_end_turn() -> void:
 	await _finish_turn(GameSettings.animation_factor())
 	_busy = false
 	_begin_turn()
+
+
+## Puts a HUD icon (Looks.icon) at the front of a button, if the icon exists.
+static func _icon(b: Button, icon_name: String) -> void:
+	var tex := Looks.icon(icon_name)
+	if tex == null:
+		return
+	b.icon = tex
+	b.expand_icon = false
+	b.add_theme_constant_override("icon_max_width", 26)
+	b.add_theme_constant_override("h_separation", 8)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _battle != null and _battle.waiting and event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+		_battle.accept()
+		get_viewport().set_input_as_handled()
 
 
 func _leave() -> void:

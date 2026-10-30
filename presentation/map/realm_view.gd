@@ -6,7 +6,7 @@ extends Control
 ## same way from the cell's outline (_shape), which edges border which neighbour (_edge_dir) and which
 ## edges face the camera and show a cliff (_front).
 ##
-## Everything is drawn in code from the RealmMap (no tile sprites yet; docs/art_prompts/
+## Everything is drawn in code, in flat colours, from the RealmMap (docs/art_prompts/
 ## lists the art that will replace the flat colours). Shows what it was last told (refresh()), not
 ## the live MatchState, so the game screen decides when a battle's outcome appears.
 ##
@@ -49,6 +49,8 @@ var _edge_dir: Array[int] = []
 ## The edges facing the camera, drawn as cliffs: [corner a, corner b, shade 0..1].
 var _front: Array = []
 var _jitter: Dictionary = {}  ## cell -> brightness variation
+var _capitals: Dictionary = {}  ## player -> territory with their pennant (the heart of their largest region)
+var _effects: Array[Dictionary] = []  ## {t, sheet, age, life, size, rise}
 var _bounds: Rect2
 var _zoom: float = 1.0
 var _pan: Vector2 = Vector2.ZERO
@@ -106,6 +108,14 @@ func setup(match_state: MatchState, realm_terrain: Dictionary) -> void:
 func refresh() -> void:
 	owners = state.owners.duplicate()
 	dice = state.dice.duplicate()
+	_capitals.clear()
+	for p in state.alive_players():
+		var best := -1
+		for t in state.largest_region_cells(p):
+			if best < 0 or dice[t] > dice[best] or (dice[t] == dice[best] and t < best):
+				best = t
+		if best >= 0:
+			_capitals[p] = best
 	queue_redraw()
 
 
@@ -204,9 +214,18 @@ func float_text(t: int, text: String, color: Color, life: float = 1.2) -> void:
 	_floaters.append({"t": t, "text": text, "color": color, "age": 0.0, "life": life})
 
 
+## Plays an effect sheet (Looks.fx: dust, lightning, motes, ward_dome, crumble) over a territory.
+## `size`: world units across; `rise`: how far above the dice footing its centre sits (world units).
+func play_fx(fx_name: String, t: int, life: float = 0.7, size: float = 48.0, rise: float = 14.0) -> void:
+	var sheet := Looks.fx(fx_name)
+	if sheet != null and t >= 0:
+		_effects.append({"t": t, "sheet": sheet, "age": 0.0, "life": life, "size": size, "rise": rise,
+			"name": fx_name, "seed": randi()})
+
+
 func _process(delta: float) -> void:
 	_time += delta
-	for list in [_flashes, _floaters]:
+	for list in [_flashes, _floaters, _effects]:
 		for i in range(list.size() - 1, -1, -1):
 			list[i]["age"] += delta
 			if list[i]["age"] >= list[i]["life"]:
@@ -287,20 +306,24 @@ func _notification(what: int) -> void:
 
 # --- Drawing ------------------------------------------------------------------------------------
 
-func _top_color(t: int) -> Color:
-	var p := owners[t]
-	var base: Color = terrain["top"]
-	var col := base.lerp(Looks.player_color(state.players[p].color_index), 0.6)
+## The owner's colour for a territory's ground: the realm's ground colour, tinted.
+func _owner_color(t: int) -> Color:
+	return (terrain["top"] as Color).lerp(Looks.player_color(state.players[owners[t]].color_index), 0.6)
+
+
+## What is laid over a territory's ground now: selection, attack targets, hover, flashes (alpha 0 = none).
+func _overlay(t: int) -> Color:
+	var col := Color(1, 1, 1, 0)
 	if t == selected:
-		col = col.lightened(0.28)
+		col = Color(1, 1, 1, 0.3)
 	elif targets.has(t):
-		col = col.lerp(target_color, 0.25 + 0.15 * sin(_time * 6.0))
+		col = Color(target_color, 0.25 + 0.15 * sin(_time * 6.0))
 	elif t == hover and interactive:
-		col = col.lightened(0.12)
+		col = Color(1, 1, 1, 0.14)
 	for f in _flashes:
 		if f["t"] == t:
 			var k: float = 1.0 - f["age"] / f["life"]
-			col = col.lerp(f["color"], k * 0.75)
+			col = Color(f["color"], maxf(col.a, k * 0.75))
 	return col
 
 
@@ -329,11 +352,13 @@ func _draw() -> void:
 			var k: float = face[2]
 			var upper := cliff.darkened(1.0 - k)
 			var lower := dark.darkened((1.0 - k) * 0.6)
-			draw_polygon(PackedVector2Array([a, b, b + depth, a + depth]),
-				PackedColorArray([upper, upper, lower, lower]))
-		var top := _top_color(t)
+			draw_polygon(PackedVector2Array([a, b, b + depth, a + depth]), PackedColorArray([upper, upper, lower, lower]))
+		var top := _owner_color(t)
 		var j: float = _jitter[c]
 		draw_colored_polygon(top_pts, Color(top.r + j, top.g + j, top.b + j, 1.0))
+		var over := _overlay(t)
+		if over.a > 0.0:
+			draw_colored_polygon(top_pts, over)
 		# Edges: a dark line between territories, a light rim along the coast, gold around the selection.
 		var around := realm.cell_neighbors(c)
 		for i in n_corners:
@@ -380,18 +405,20 @@ func _draw_arrow() -> void:
 	draw_colored_polygon(PackedVector2Array([b, b - dir * 7.0 + side * 4.0, b - dir * 7.0 - side * 4.0]), col)
 
 
-## The dice, drawn on screen (so the numbers stay sharp at any zoom), back to front.
+## The pennants and dice, drawn on screen (so the numbers stay sharp at any zoom), back to front.
 func _draw_stacks() -> void:
 	var scale := _xf.get_scale().x
 	var w := DIE * scale
 	var compact := w < COMPACT_BELOW
 	var order: Array = range(realm.count())
-	order.sort_custom(func(a: int, b: int) -> bool:
-		var ca := realm.territories[a].center
-		var cb := realm.territories[b].center
-		return ca.x + ca.y < cb.x + cb.y)
+	order.sort_custom(func(a: int, b: int) -> bool: return territory_screen_pos(a).y < territory_screen_pos(b).y)
 	var font := UiTheme.bold_font()
+	var capital_of := {}
+	for p in _capitals:
+		capital_of[_capitals[p]] = p
 	for t: int in order:
+		if capital_of.has(t):
+			_draw_pennant(territory_screen_pos(t) + Vector2(-w * 0.95, w * 0.1), scale, Looks.player_color(state.players[capital_of[t]].color_index))
 		var p := owners[t]
 		var player := state.players[p]
 		var skin: String = GodCatalog.pantheon(player.pantheon)["dice"]
@@ -403,12 +430,97 @@ func _draw_stacks() -> void:
 		DiceArt.draw_stack(self, base, cube_w, shown, skin, tint, t * 97)
 		if GameSettings.show_counts or not full or dice[t] > 4:
 			_draw_count(t, base, cube_w, font, Looks.player_color(player.color_index))
+	_draw_wards(scale)
+	_draw_effects(scale)
+
+
+## A small pennant in the player's colour on the heart of their largest region, waving.
+func _draw_pennant(foot: Vector2, scale: float, color: Color) -> void:
+	var pole := 30.0 * scale
+	var top := foot - Vector2(0.0, pole)
+	draw_line(foot, top, Color(0.18, 0.12, 0.08), maxf(1.5, 1.6 * scale), true)
+	draw_circle(top, maxf(1.5, 1.4 * scale), Color(0.9, 0.75, 0.35))
+	var length := 16.0 * scale
+	var height := 8.0 * scale
+	var upper := PackedVector2Array()
+	var lower := PackedVector2Array()
+	for i in 9:
+		var k := i / 8.0
+		var wave := sin(_time * 5.0 - k * 4.0) * 1.6 * scale * k
+		upper.append(top + Vector2(length * k, 1.0 * scale + wave))
+		lower.append(top + Vector2(length * k, 1.0 * scale + height * (1.0 - k * 0.85) + wave))
+	lower.reverse()
+	var shape := upper + lower
+	draw_colored_polygon(shape, color)
+	draw_polyline(shape + PackedVector2Array([shape[0]]), color.darkened(0.45), maxf(1.0, 0.8 * scale), true)
+
+
+## A dome of light over each warded territory (the last frame of the ward effect), or a ring.
+func _draw_wards(scale: float) -> void:
+	var sheet := Looks.fx("ward_dome")
+	for t in state.wards:
+		if state.wards[t]["player"] != owners[t]:
+			continue
+		if sheet == null:
+			continue
+		var n := Looks.fx_frames(sheet)
+		var side := 46.0 * scale
+		var c := territory_screen_pos(t) - Vector2(0.0, 12.0 * scale)
+		var pulse := 0.8 + 0.15 * sin(_time * 3.0)
+		var region := Rect2((n - 1) * sheet.get_height(), 0, sheet.get_height(), sheet.get_height())
+		var rect := Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side))
+		draw_texture_rect_region(sheet, rect, region, Color(1.3, 1.5, 1.8, pulse))
+		# a glowing rim where the dome meets the ground
+		var foot := territory_screen_pos(t) + Vector2(0.0, 2.0 * scale)
+		draw_set_transform(foot, 0.0, Vector2(1.0, 0.42))
+		draw_arc(Vector2.ZERO, side * 0.42, 0.0, TAU, 36, Color(0.7, 0.9, 1.0, 0.45 * pulse), 5.0 * scale, true)
+		draw_arc(Vector2.ZERO, side * 0.42, 0.0, TAU, 36, Color(0.9, 0.97, 1.0, 0.9 * pulse), 1.6 * scale, true)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_effects(scale: float) -> void:
+	for e in _effects:
+		var sheet: Texture2D = e["sheet"]
+		var n := Looks.fx_frames(sheet)
+		var frame := mini(n - 1, int(e["age"] / e["life"] * n))
+		var side: float = e["size"] * scale
+		var c := territory_screen_pos(e["t"]) - Vector2(0.0, e["rise"] * scale)
+		var tint := Color.WHITE
+		match e["name"]:
+			"dust":
+				tint = Color(1.9, 1.7, 1.4)  # the painted dust is dark: lift it to a sandy cloud
+			"lightning":
+				_draw_bolt(territory_screen_pos(e["t"]), side, e["age"] / e["life"], e["seed"], scale)
+				tint = Color(1.6, 1.7, 2.0)
+		draw_texture_rect_region(sheet, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)),
+			Rect2(frame * sheet.get_height(), 0, sheet.get_height(), sheet.get_height()), tint)
+
+
+## A jagged bolt from the sky onto `foot`, bright at first, flickering out (with the lightning sheet).
+func _draw_bolt(foot: Vector2, length: float, k: float, seed_value: int, scale: float) -> void:
+	if k > 0.6 or (k > 0.25 and int(k * 40.0) % 3 == 0):
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var pts := PackedVector2Array()
+	var top := foot - Vector2(rng.randf_range(-0.2, 0.2) * length, length * 1.3)
+	for i in 9:
+		var f := i / 8.0
+		var p := top.lerp(foot, f)
+		if i > 0 and i < 8:
+			p.x += rng.randf_range(-0.12, 0.12) * length
+		pts.append(p)
+	var fade := 1.0 - k / 0.6
+	draw_polyline(pts, Color(0.55, 0.75, 1.0, 0.35 * fade), 9.0 * scale, true)
+	draw_polyline(pts, Color(0.8, 0.9, 1.0, 0.8 * fade), 3.5 * scale, true)
+	draw_polyline(pts, Color(1, 1, 1, fade), 1.5 * scale, true)
+	draw_circle(foot, length * 0.18 * fade, Color(0.85, 0.92, 1.0, 0.35 * fade))
 
 
 func _draw_count(t: int, base: Vector2, w: float, font: Font, color: Color) -> void:
 	var r := clampf(w * 0.5, 7.0, 13.0)
 	var at := base + Vector2(w * 0.75 + r * 0.4, -r * 0.2)
-	if state.wards.has(t) and state.wards[t]["player"] == owners[t]:
+	if state.wards.has(t) and state.wards[t]["player"] == owners[t] and Looks.fx("ward_dome") == null:
 		draw_arc(at, r + 4.0, 0.0, TAU, 24, Color(0.75, 0.9, 1.0, 0.9), 2.0, true)
 	draw_circle(at, r + 1.5, Color(0, 0, 0, 0.6))
 	draw_circle(at, r, color.darkened(0.25))

@@ -346,7 +346,7 @@ Yoruba became playable as soon as its dice arrived (the portraits and theme alre
 ### 6.2 What a pantheon brings
 1. **Gods:** 3 + 3 in the POC, 12 at release (6 primary, 6 secondary).
 2. **Dice skin:** used for that player's dice on the map and in battles.
-3. **Realm look:** used when it is the human's pantheon. It sets the menu theme (background, frames, buttons, title font, weather particles) and the **terrain palette** of the island (top, cliff and sea colours, `Looks.TERRAIN`). Later it also brings terrain tiles and props (§8.4).
+3. **Realm look:** used when it is the human's pantheon. It sets the menu theme (background, frames, buttons, title font, weather particles) and the **terrain palette** of the island (top, cliff and sea colours, `Looks.TERRAIN`).
 4. **Music theme [MVP]** and **voice barks [LATER]**.
 
 ### 6.3 Planned gods for the next pantheons (names only, design later)
@@ -394,14 +394,14 @@ A **hand-painted diorama**: a floating island of raised land, seen from a fixed 
 - Each cell is a raised block: a top diamond in the owner's colour (60% player colour over the realm's ground colour, with ±4.5% brightness noise per cell) and two cliff faces in the realm's cliff colour, darkening downwards.
 - Territory borders are dark lines on the top faces, the coast is a light rim, and the selection is outlined in gold. Elevation gives every territory its own plateau.
 - Draw order: cells sorted back to front by their screen position (y, then x). Dice stacks are drawn after the terrain, also back to front.
-- Both boards share one drawing routine: a cell is its top outline (a diamond, or a hexagon flattened to 62%), the edges facing the camera become cliffs (2 for a diamond, 3 for a hexagon, each shaded by direction), and every edge knows which neighbour lies across it, for borders and the coast. Terrain tiles for the hex board are hexagonal versions of the same art ([art_prompts/01_terrain_tiles.md](art_prompts/01_terrain_tiles.md)).
+- Both boards share one drawing routine: a cell is its top outline (a diamond, or a hexagon flattened to 62%), the edges facing the camera become cliffs (2 for a diamond, 3 for a hexagon, each shaded by direction), and every edge knows which neighbour lies across it, for borders and the coast.
 - A soft shadow of the island falls on the backdrop.
 
-**Next (MVP, with art):**
-- **Terrain tiles:** per realm, 4–6 top-face variants (grass, stone, sand, snow…) and 2 cliff variants, as 64 × 32 px (×2 for HiDPI) diamond sprites, tinted by owner at about 45%.
-- **Props:** per realm, 10–15 small sprites (temples, trees, standing stones, pyramids, pagodas) scattered on territory cells away from the dice anchor, for flavour and orientation.
-- **Capital marker:** the player's largest region's anchor gets a banner in the player's colour (it shows where reinforcements come from).
-- **Water/sky ring:** an animated sea or cloud ring around the island (shader on a large polygon).
+**Flat colours by design.** Painted ground tiles, cliffs and props were tried with the Greek art and removed: they added little to a board that is read for colour and numbers, and every new realm would have needed some 30 more pictures. The map stays code-drawn, so a new pantheon needs only its dice, portraits and menu theme.
+
+**Markers on the map [POC]:** each player's capital (the strongest territory of their largest region, where reinforcements come from) flies a waving pennant in their colour, drawn in code.
+
+**Later:** an animated sea or cloud ring around the island (a shader on a large polygon).
 
 ### 8.3 Dice and battles
 **On the map [POC].** Every die is a small isometric cube built from the skin's face pictures: three parallelograms (top, left, right) each textured with a face, plus a dark body behind to fill the rounded corners. Dice stack in columns of up to 4, and up to 3 columns for stacks of 9–10. A few faces per stack are chosen at random but fixed per stack, so the stacks look varied and stay stable.
@@ -411,9 +411,10 @@ A **hand-painted diorama**: a floating island of raised land, seen from a fixed 
 - When zoomed out so far that a die would be under 12 px, stacks **collapse to a single die and the badge**. Hovering or selecting a territory shows its **full tower** again.
 - Zoom (wheel, pinch, trackpad) and pan (drag) make a detailed view available on every screen.
 
-**Battles [POC: battle panel → MVP: dice tower].**
-- POC: a framed panel over the bottom of the map. Both armies' dice (face pictures) tumble for 0.55 s, settle, then the totals, the bonuses that applied and "Conquered!" / "Repelled!" appear. An arc arrow on the map links attacker and defender.
-- MVP **dice tower**: a carved tower of the attacker's pantheon (left) and of the defender's (right). The dice drop in at the top, rattle down two baffles (pre-rendered animation frames or tweened sprites with motion blur) and land in a tray. The bigger total's tray glows, and the loser's dice crumble into dust. Duration 1.2 s at normal speed, with battle speed options of 1×, 2× and 6×. Computer turns always run at least 2×.
+**Battles [POC].**
+- **Over the whole screen.** The map dims, the attacker slides in from the left and the defender from the right (on a tall screen from the top and the bottom), each with their pantheon's **dice tower** (a pantheon without its own tower yet borrows the Greek one), and "VS" pops in between. Tower and tray are scaled to the room; the dice are as big as the tray allows: about 100 px for up to three dice on a laptop screen, one row up to five, two staggered rows for more. The dice tumble out of the tower's arch into the tray (0.8 s at normal speed; battle speed 1×, 2× or 6×, computer turns at least 2×) and settle. **Both rolls stay in view**: the losing side's dice are not hidden or destroyed. Then everything fades back to the map, where the outcome plays (dust, a flash, "+N" / "−N"). An arc arrow on the map links attacker and defender.
+- **How the gods changed the roll.** Under each tray the total is taken apart: the sum of the dice, then every bonus or penalty with the god and power behind it ("+2 Ares · Bloodlust", "−1 Ares · Reckless", "+5 Guanyin · Mercy (ward)", "+4 Thor · Opening Thunder (first attack)"), then what the gods did to the dice themselves ("Ra · Sun's Glare: no 1s", "Odin · Wisdom of the Runes: 1s rolled again"). A die whose 1 was rolled again has a gold frame and a small "1→". Below the verdict: how a tie was decided and what the gods did after the battle ("Guan Yu · Loyal Blade: +1 die on the conquered land", "Frigg · Hearth and Home: +1 die for holding", "Sekhmet · Unquenchable Wrath: another territory loses 2"). The same bonuses are listed in the status bar when hovering a target, before attacking.
+- **How long the result stays (Settings, "Battle result shown"):** Brief 0.8 s, Normal 1.8 s, Long 3.5 s, or **Until I press Continue** (also a click on the map, Enter or Space). It applies to battles the player fights in. Battles between computer players are shown only on the map (the arrow, then the outcome) unless "Show battles between rivals too" is on.
 - On the map after a battle: a conquered territory flashes gold and the new owner's colour washes across it from the attacker's side. Dust puffs on the stack that was reduced to 1.
 
 ### 8.4 VFX list
@@ -450,7 +451,7 @@ Boot → Splash (realm painting + title, tap to skip)
        ├─ New War ─► Pantheon & options ─► Choose your gods ─► War ─► Result ─► (New war | Main menu)
        ├─ Quick War ─────────────────────────────────────────► War   (last choices)
        ├─ Campaign [LATER] ─► Era map ─► Chapter briefing ─► War ─► Chapter result
-       ├─ Settings (sound, volume, battle speed, dice counts, full screen)
+       ├─ Settings (sound, volume, battle speed, how long battle results stay, dice counts, full screen)
        ├─ How to play (rules + every god)
        ├─ Credits
        └─ Quit (desktop only)
@@ -517,7 +518,7 @@ All strings go through `tr()` (as in Chasm of Knights). Planned first languages:
 - **Music [MVP]:** one calm menu theme per pantheon (60–90 s loop), one tense war loop per pantheon that layers in a percussion stem when any player is down to 3 territories, and short victory and defeat stings.
 - **SFX:** dice rattle (wood/stone/clay per skin), dice landing in the tray, conquest (stone crunch + horn), repelled (shield clang), reinforcement (soft drops), miracle per kind (thunder, choir swell, temple bell), awakening (deep gong + the god's leitmotif), UI ticks. The POC reuses Chasm of Knights' Kenney UI sounds and placeholder hits.
 - **Voice [LATER]:** one awakening line per god ("The war god wakes!"), short and language-neutral (a shout or chant).
-- Prompts for all of these are in [art_prompts/09_music.md](art_prompts/09_music.md) and [art_prompts/10_sound_effects.md](art_prompts/10_sound_effects.md).
+- Prompts for all of these are in [art_prompts/07_music.md](art_prompts/07_music.md) and [art_prompts/08_sound_effects.md](art_prompts/08_sound_effects.md).
 
 ---
 
@@ -632,7 +633,7 @@ Copy Chasm of Knights' `export_guard` editor plugin and presets: Windows, Web (s
 - Responsive: landscape and portrait (checked at 1280 × 800 and 540 × 960).
 
 ### 14.2 What is not (yet)
-Hotseat, saves, a pause menu, the dice tower animation, terrain tile art, props, music, localisation, colour-blind emblems, campaign, online, exports. The player list is hidden on a phone held upright.
+Hotseat, saves, a pause menu, music, localisation, colour-blind emblems, campaign, online, exports. The player list is hidden on a phone held upright.
 
 ### 14.3 Running it
 ```sh
@@ -649,8 +650,8 @@ godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=540x960] [
 | Milestone | Content | Estimate |
 |---|---|---|
 | **M0 — POC** ✔ | This build. | done |
-| **M1 — Vertical slice** | Terrain tiles + props for Greek and Norse, dice tower battles, music and SFX for 2 realms, pause / save / resume, hotseat, seat setup, mobile player strip, colour-blind emblems. | 4–6 weeks |
-| **M2 — Content complete (launch set)** | 7 pantheons × 12 gods, terrain art for all 7, balance at 2,000-war sims + playtests, Daily Omen, localisation (EN + 3), exports (Win, Web, Android). | 8–10 weeks |
+| **M1 — Vertical slice** | Dice towers for all pantheons, music and SFX for 2 realms, pause / save / resume, hotseat, seat setup, mobile player strip, colour-blind emblems. | 4–6 weeks |
+| **M2 — Content complete (launch set)** | 7 pantheons × 12 gods, balance at 2,000-war sims + playtests, Daily Omen, localisation (EN + 3), exports (Win, Web, Android). | 8–10 weeks |
 | **M3 — Launch** | Store pages, trailer (from the screenshot test), analytics (opt-in), crash reporting. | 2 weeks |
 | **M4 — Campaign** | Eras of Myth for Greek and Norse, boss gods, unlocks. | 6–8 weeks |
 | **M5 — Online** | Mytholore server integration: ranked 1v1, casual FFA, friends, cloud saves. | 6 weeks |

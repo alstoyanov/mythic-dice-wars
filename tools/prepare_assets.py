@@ -2,6 +2,7 @@
 
     python tools/prepare_assets.py            # everything
     python tools/prepare_assets.py dice       # only the dice faces
+    python tools/prepare_assets.py generated  # only the generated art (terrain, props, towers, icons, effects)
     python tools/prepare_assets.py --preview  # also writes tools/_dice_preview.png (a contact sheet)
 
 Sources (outside the project):
@@ -13,6 +14,7 @@ Sources (outside the project):
   * Realm interface themes (backgrounds, frames, buttons, title fonts): Tile Shifter's
     assets/themes/<realm>.
   * Interface sounds and the menu font: Chasm of Knights.
+  * Generated art (docs/art_prompts): Godot/assets/images/dice-wars/<kind>/..., see tools/generated_art.py.
 
 Output: assets/dice/<skin>/face_<1..6>.png (256 px, white background removed),
 assets/gods/<pantheon>/<god>.jpg, assets/themes/<pantheon>/..., assets/fonts, assets/audio/sfx.
@@ -187,7 +189,7 @@ def preview(faces: list[Path]) -> None:
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    what = set(args) or {"dice", "gods", "themes", "shared"}
+    what = set(args) or {"dice", "gods", "themes", "shared", "generated"}
     faces = prepare_dice() if "dice" in what else []
     if "gods" in what:
         prepare_gods()
@@ -195,5 +197,8 @@ if __name__ == "__main__":
         prepare_themes()
     if "shared" in what:
         prepare_shared()
+    if "generated" in what:  # terrain, props, towers, icons, effects (see tools/generated_art.py)
+        import generated_art
+        generated_art.prepare(GODOT / "assets" / "images" / "dice-wars", ROOT / "assets")
     if "--preview" in sys.argv and faces:
         preview(faces)

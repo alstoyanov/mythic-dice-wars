@@ -1,7 +1,7 @@
 extends Node
 ## Autoload "Sound": sound effects with the player's on/off and volume settings on an "SFX" bus.
 ## Everything else calls Sound.play("name"). To change a sound, edit SOUNDS. These are placeholder
-## sounds from Chasm of Knights until the game's own are made (docs/art_prompts/10_sound_effects.md).
+## sounds from Chasm of Knights until the game's own are made (docs/art_prompts/08_sound_effects.md).
 
 const SFX_DIR := "res://assets/audio/sfx/"
 const VOICES := 8

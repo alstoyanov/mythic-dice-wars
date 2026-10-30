@@ -272,39 +272,64 @@ func can_attack_from(from: int) -> bool:
 	return false
 
 
-## The bonuses that would apply to an attack, as [[label, value], ...] for each side.
+## The awake gods of player `p` that set effect `key`, as [["God · Power", value], ...]; a god's boon
+## and bane are listed separately (Ares gives +2 attack with Bloodlust and -1 defence with Reckless).
+func sources(p: int, key: String) -> Array:
+	var out: Array = []
+	var player := players[p]
+	for id in [player.primary, player.secondary]:
+		if id == player.secondary and not player.secondary_awake:
+			continue
+		var g := GodCatalog.god(id)
+		for part in [["boon", "boon_name"], ["bane", "bane_name"]]:
+			var fx: Dictionary = g.get(part[0], {})
+			if fx.has(key):
+				out.append(["%s · %s" % [g.get("name", ""), g.get(part[1], "")], fx[key]])
+	return out
+
+
+## The names of the gods behind effect `key` for player `p` ("Odin · Wisdom of the Runes, ...").
+func source_names(p: int, key: String) -> String:
+	return ", ".join(sources(p, key).map(func(x: Array) -> String: return x[0]))
+
+
+## The bonuses that would apply to an attack, as [[source, value], ...] for each side; each source names
+## the god and power ("Ares · Bloodlust") and, where it only sometimes applies, why it applies now.
 func attack_modifiers(from: int, to: int) -> Dictionary:
 	var a := owners[from]
 	var d := owners[to]
 	var att: Array = []
 	var def: Array = []
-	var v: int = _fx(a, "attack_bonus")
-	if v != 0:
-		att.append(["Divine might", v])
-	if attacks_this_turn == 0 and int(_fx(a, "first_attack_bonus")) != 0:
-		att.append(["First strike", _fx(a, "first_attack_bonus")])
-	if dice[from] < dice[to] and int(_fx(a, "underdog_bonus")) != 0:
-		att.append(["Underdog", _fx(a, "underdog_bonus")])
-	if dice[from] >= max_dice(a) and int(_fx(a, "full_stack_bonus")) != 0:
-		att.append(["Full host", _fx(a, "full_stack_bonus")])
-	v = _fx(d, "defense_bonus")
-	if v != 0:
-		def.append(["Divine guard" if v > 0 else "Divine curse", v])
+	att.append_array(sources(a, "attack_bonus"))
+	if attacks_this_turn == 0:
+		for x in sources(a, "first_attack_bonus"):
+			att.append([x[0] + " (first attack)", x[1]])
+	if dice[from] < dice[to]:
+		for x in sources(a, "underdog_bonus"):
+			att.append([x[0] + " (larger army)", x[1]])
+	if dice[from] >= max_dice(a):
+		for x in sources(a, "full_stack_bonus"):
+			att.append([x[0] + " (full stack)", x[1]])
+	def.append_array(sources(d, "defense_bonus"))
 	if wards.has(to) and wards[to]["player"] == d:
-		def.append(["Ward", wards[to]["bonus"]])
+		def.append([str(wards[to].get("source", "Ward")) + " (ward)", wards[to]["bonus"]])
 	return {"attack": att, "defense": def}
 
 
 # --- Actions ----------------------------------------------------------------------------------
 
-func _roll(count: int, min_face: int, reroll_ones: bool, rng: RandomNumberGenerator) -> Array[int]:
-	var out: Array[int] = []
+## Rolls `count` dice. Returns [values, rerolled]: rerolled[i] is true where a 1 was rolled again.
+func _roll(count: int, min_face: int, reroll_ones: bool, rng: RandomNumberGenerator) -> Array:
+	var values: Array[int] = []
+	var rerolled: Array[bool] = []
 	for i in count:
 		var v := rng.randi_range(maxi(1, min_face), 6)
-		if v == 1 and reroll_ones:
+		var again := v == 1 and reroll_ones
+		if again:
 			v = rng.randi_range(1, 6)
-		out.append(v)
-	return out
+		values.append(v)
+		rerolled.append(again)
+	return [values, rerolled]
 
 
 static func _sum(values: Array) -> int:
@@ -315,31 +340,53 @@ static func _sum(values: Array) -> int:
 
 
 ## Attacks `to` from `from` (must be allowed, see can_attack). Returns what happened:
-## {from, to, attacker, defender, won, attack_rolls, defense_rolls, attack_total, defense_total,
-##  modifiers, conquered_dice, losses: {territory: dice lost}, awakened: bool, eliminated: player or -1}
+## {from, to, attacker, defender, won, attack_rolls, defense_rolls (dice values), attack_rerolled,
+##  defense_rerolled (true where a god had a 1 rolled again), attack_total, defense_total,
+##  modifiers ({attack, defense}: [[source, value]]), notes ({attack, defense}: what the gods did to the
+##  dice), tie (how a tie was decided, "" if none), after ([text]: what the gods did after the battle),
+##  gains / losses ({territory: dice}), awakened: bool, eliminated: player or -1}
 func attack(from: int, to: int, rng: RandomNumberGenerator) -> Dictionary:
 	assert(can_attack(from, to))
 	var a := owners[from]
 	var d := owners[to]
 	var mods := attack_modifiers(from, to)
-	var att_rolls := _roll(dice[from], _fx(a, "min_attack_face", 1), _fx(a, "reroll_ones_attack", false), rng)
-	var def_rolls := _roll(dice[to], 1, _fx(d, "reroll_ones_defense", false), rng)
-	var att_total := _sum(att_rolls) + _sum(mods["attack"])
-	var def_total := _sum(def_rolls) + _sum(mods["defense"])
+	var att := _roll(dice[from], _fx(a, "min_attack_face", 1), _fx(a, "reroll_ones_attack", false), rng)
+	var def := _roll(dice[to], 1, _fx(d, "reroll_ones_defense", false), rng)
+	var att_total := _sum(att[0]) + _sum(mods["attack"])
+	var def_total := _sum(def[0]) + _sum(mods["defense"])
 	var tie_to_attacker: bool = _fx(a, "attack_wins_ties", false) or _fx(d, "defense_loses_ties", false)
 	var won := att_total > def_total or (att_total == def_total and tie_to_attacker)
 	attacks_this_turn += 1
+	var notes := {"attack": [], "defense": []}
+	if int(_fx(a, "min_attack_face", 1)) >= 2:
+		notes["attack"].append("%s: no 1s" % source_names(a, "min_attack_face"))
+	if _fx(a, "reroll_ones_attack", false):
+		notes["attack"].append("%s: 1s rolled again" % source_names(a, "reroll_ones_attack"))
+	if _fx(d, "reroll_ones_defense", false):
+		notes["defense"].append("%s: 1s rolled again" % source_names(d, "reroll_ones_defense"))
+	var tie := ""
+	if att_total == def_total:
+		if tie_to_attacker:
+			var why: Array[String] = []
+			for x in sources(a, "attack_wins_ties") + sources(d, "defense_loses_ties"):
+				why.append(x[0])
+			tie = "A tie, won by the attacker: %s" % ", ".join(why)
+		else:
+			tie = "A tie: the defender holds"
 	var result := {
 		"from": from, "to": to, "attacker": a, "defender": d, "won": won,
-		"attack_rolls": att_rolls, "defense_rolls": def_rolls,
+		"attack_rolls": att[0], "defense_rolls": def[0], "attack_rerolled": att[1], "defense_rerolled": def[1],
 		"attack_total": att_total, "defense_total": def_total,
-		"modifiers": mods, "losses": {}, "gains": {}, "awakened": false, "eliminated": -1,
+		"modifiers": mods, "notes": notes, "tie": tie, "after": [],
+		"losses": {}, "gains": {}, "awakened": false, "eliminated": -1,
 	}
 	if won:
 		var moving := dice[from] - 1
 		owners[to] = a
 		var bonus: int = _fx(a, "conquest_bonus") if conquests_this_turn == 0 else 0
 		dice[to] = mini(moving + bonus, max_dice(a))
+		if bonus > 0 and dice[to] > moving:
+			result["after"].append("%s: +%d die on the conquered land" % [source_names(a, "conquest_bonus"), dice[to] - moving])
 		conquests_this_turn += 1
 		dice[from] = 1
 		result["gains"][to] = dice[to]
@@ -358,6 +405,7 @@ func attack(from: int, to: int, rng: RandomNumberGenerator) -> Dictionary:
 			var before := dice[to]
 			dice[to] = mini(dice[to] + reward, max_dice(d))
 			result["gains"][to] = dice[to] - before
+			result["after"].append("%s: +%d die for holding" % [source_names(d, "defend_reward"), dice[to] - before])
 		var hubris: int = _fx(a, "hubris")
 		if hubris > 0:
 			var victims: Array[int] = []
@@ -369,6 +417,7 @@ func attack(from: int, to: int, rng: RandomNumberGenerator) -> Dictionary:
 				var lost := mini(hubris, dice[t] - 1)
 				dice[t] -= lost
 				result["losses"][t] = lost
+				result["after"].append("%s: another territory loses %d" % [source_names(a, "hubris"), lost])
 	return result
 
 
@@ -440,7 +489,9 @@ func cast_miracle(god_id: String, target: int) -> Dictionary:
 			dice[target] = mini(max_dice(current), dice[target] + int(m["amount"]))
 			change = dice[target] - before
 		"ward":
-			wards[target] = {"player": current, "bonus": int(m["amount"])}
+			var g := GodCatalog.god(god_id)
+			wards[target] = {"player": current, "bonus": int(m["amount"]),
+				"source": "%s · %s" % [g.get("name", ""), g.get("boon_name", "")]}
 	return {"god": god_id, "kind": m["kind"], "target": target, "change": change}
 
 

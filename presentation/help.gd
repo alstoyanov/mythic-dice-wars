@@ -33,7 +33,9 @@ Attack as often as you like, then press [b]End turn[/b].
 
 [b]Gods.[/b] Your [b]primary god[/b] blesses you from the first turn. Your [b]secondary god[/b] is mighty but brings a flaw, and (by default) wakes only after your %d-th conquest. A limit on attacks counts from the moment the god wakes. Some gods grant a [b]miracle[/b]: an active power paid with [b]favour[/b], once per turn. You gain favour for every battle you fight and every territory you lose.
 
-[b]Map.[/b] Zoom with the mouse wheel or a pinch, drag to look around, right-click to cancel a choice. Hover a target to see your chance to win.
+[b]Map.[/b] Zoom with the mouse wheel or a pinch, drag to look around, right-click to cancel a choice. Hover a target to see your chance to win and what the gods add.
+
+[b]Battles.[/b] Every battle you fight in fills the screen: both armies' dice tumble out of their towers. Under each tray the total is taken apart: the dice, then every god's bonus or penalty by name. A die with a gold frame was a 1 that a god had rolled again. In Settings you choose how long the result stays, or to wait until you press Continue (or click anywhere), and whether to watch the battles between your rivals too.
 
 """ % [MatchState.RESERVE_CAP, MatchState.AWAKEN_CONQUESTS]
 

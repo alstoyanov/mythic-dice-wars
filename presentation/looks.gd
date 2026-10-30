@@ -68,3 +68,41 @@ static func of(pantheon: String) -> Dictionary:
 
 static func player_color(color_index: int) -> Color:
 	return PLAYER_COLORS[color_index % PLAYER_COLORS.size()]
+
+
+static var _icons: Dictionary = {}
+static var _fx: Dictionary = {}
+
+## The dice tower of a pantheon for battles: {tower, tray, tray_front} (Texture2D), or the first pantheon
+## that has one while the others are still being made; {} if none exists.
+static func tower(pantheon: String) -> Dictionary:
+	for id in [pantheon] + GodCatalog.PANTHEONS.map(func(p: Dictionary) -> String: return p["id"]):
+		var dir := "res://assets/towers/%s/" % id
+		if ResourceLoader.exists(dir + "tower.png") and ResourceLoader.exists(dir + "tray.png"):
+			var t := {"tower": load(dir + "tower.png"), "tray": load(dir + "tray.png")}
+			if ResourceLoader.exists(dir + "tray_front.png"):
+				t["tray_front"] = load(dir + "tray_front.png")
+			return t
+	return {}
+
+
+## A HUD icon from assets/ui/icons (favour, reserve, reinforce, crown, ward, smite, bless, awaken, asleep,
+## attack, defence, end_turn), or null.
+static func icon(icon_name: String) -> Texture2D:
+	if not _icons.has(icon_name):
+		var path := "res://assets/ui/icons/%s.png" % icon_name
+		_icons[icon_name] = load(path) if ResourceLoader.exists(path) else null
+	return _icons[icon_name]
+
+
+## An effect sprite sheet from assets/vfx: one row of square frames (dust, lightning, motes, ward_dome,
+## crumble), or null.
+static func fx(fx_name: String) -> Texture2D:
+	if not _fx.has(fx_name):
+		var path := "res://assets/vfx/%s.png" % fx_name
+		_fx[fx_name] = load(path) if ResourceLoader.exists(path) else null
+	return _fx[fx_name]
+
+
+static func fx_frames(sheet: Texture2D) -> int:
+	return maxi(1, int(round(sheet.get_width() / float(sheet.get_height()))))

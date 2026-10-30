@@ -2,20 +2,27 @@
 
 Every picture and sound the game still needs, one file per kind of asset. **Every prompt is complete**: copy the block
 and paste it as it is, with nothing to fill in. For the reasons behind them, see [GAME_DESIGN.md](../GAME_DESIGN.md) §8
-(visuals) and §10 (audio).
+(visuals) and §10 (audio). The map itself is drawn in code (flat colours), so it needs no tiles or props.
 
 | File | What | Prompts |
 |---|---|---|
-| [01_terrain_tiles.md](01_terrain_tiles.md) | ground tiles (diamond and hexagon) and cliffs, per realm | 70 |
-| [02_props.md](02_props.md) | temples, trees, statues… standing on the map, per realm | 84 |
-| [03_dice_towers.md](03_dice_towers.md) | battle dice towers (tower, tray, tray front), per pantheon | 21 |
-| [04_dice_skins.md](04_dice_skins.md) | dice sheets: all done; the rules for a new one | 0 |
-| [05_realm_themes.md](05_realm_themes.md) | menu backgrounds, frames and buttons for 8 new pantheons | 48 |
-| [06_hud_icons.md](06_hud_icons.md) | war-screen icons | 12 |
-| [07_effects.md](07_effects.md) | effect sprite sheets | 6 |
-| [08_key_art.md](08_key_art.md) | key art, app icon, logo | 3 |
-| [09_music.md](09_music.md) | menu and war music per pantheon, stings (Suno) | 14 tracks |
-| [10_sound_effects.md](10_sound_effects.md) | sound effects, awakening voices | 21 |
+| [01_dice_towers.md](01_dice_towers.md) | battle dice towers (tower, tray, tray front), per pantheon | 21 |
+| [02_dice_skins.md](02_dice_skins.md) | dice sheets: all done; the rules for a new one | 0 |
+| [03_realm_themes.md](03_realm_themes.md) | menu backgrounds, frames and buttons for 8 new pantheons | 48 |
+| [04_hud_icons.md](04_hud_icons.md) | war-screen icons | 12 |
+| [05_effects.md](05_effects.md) | effect sprite sheets | 5 |
+| [06_key_art.md](06_key_art.md) | key art, app icon, logo | 3 |
+| [07_music.md](07_music.md) | menu and war music per pantheon, stings (Suno) | 14 tracks |
+| [08_sound_effects.md](08_sound_effects.md) | sound effects, awakening voices | 21 |
+
+## Done and in the game
+
+- **Greek:** the dice tower (tower, tray, tray front). Other pantheons borrow it until they have their own.
+- **Shared:** all 12 HUD icons; the effects (dust, lightning, motes, ward dome, crumble). The lightning sheet has
+  two broken frames, so regenerating it on black (see 05) would help.
+
+New pictures are cut into game assets by `python tools/prepare_assets.py generated`; add each new file's line to
+`GENERATED` in `tools/generated_art.py` first (the generator's file names are random).
 
 ## What already exists (do not regenerate)
 

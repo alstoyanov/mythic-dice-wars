@@ -26,6 +26,15 @@ func update(state: MatchState) -> void:
 	for c in _list.get_children():
 		c.queue_free()
 	var accent: Color = UiTheme.current_palette()["accent"]
+	var leader := -1  # the player with the most territories wears the crown (none on a tie)
+	var most := 0
+	for q in state.alive_players():
+		var n := state.territories_of(q).size()
+		if n > most:
+			most = n
+			leader = q
+		elif n == most:
+			leader = -1
 	for p in state.players:
 		var active := p.index == state.current and not p.eliminated
 		var row := PanelContainer.new()
@@ -58,20 +67,20 @@ func update(state: MatchState) -> void:
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_label.clip_text = true
 		head.add_child(name_label)
+		if p.index == leader and Looks.icon("crown") != null:
+			head.add_child(_icon("crown", 22, "Leads with the most territories"))
 		head.add_child(_portrait(p.primary, true, state))
 		head.add_child(_portrait(p.secondary, p.secondary_awake, state, p.conquests))
 		if p.eliminated:
 			continue
-		var stats := Label.new()
-		stats.add_theme_font_size_override("font_size", 12)
-		stats.modulate = Color(1, 1, 1, 0.85)
-		stats.text = "Lands %d · Dice %d · +%d per turn\nReserve %d · Favour %d" % [
-			state.territories_of(p.index).size(), state.total_dice(p.index),
-			state.reinforcement_preview(p.index), p.reserve, p.favor]
-		if not p.secondary_awake:
-			stats.text += " · %s wakes in %d" % [GodCatalog.god(p.secondary).get("name", ""),
-				MatchState.AWAKEN_CONQUESTS - p.conquests]
+		var stats := HBoxContainer.new()
+		stats.add_theme_constant_override("separation", 4)
+		stats.modulate = Color(1, 1, 1, 0.9)
 		col.add_child(stats)
+		_stat(stats, "", "%d lands · %d dice" % [state.territories_of(p.index).size(), state.total_dice(p.index)], "")
+		_stat(stats, "reinforce", "+%d" % state.reinforcement_preview(p.index), "Reinforcements at the end of the turn")
+		_stat(stats, "reserve", str(p.reserve), "Reserve: dice waiting for room")
+		_stat(stats, "favour", str(p.favor), "Favour: pays for miracles")
 
 
 func _portrait(god_id: String, awake: bool, state: MatchState, conquests: int = 0) -> Control:
@@ -88,6 +97,18 @@ func _portrait(god_id: String, awake: bool, state: MatchState, conquests: int = 
 	if not awake:
 		pic.modulate = Color(0.35, 0.35, 0.4)
 	holder.add_child(pic)
+	if not awake and Looks.icon("asleep") != null:
+		var eye := _icon("asleep", 18, "")
+		eye.position = Vector2(PORTRAIT - 17, PORTRAIT - 15)
+		holder.add_child(eye)
+		var left := Label.new()
+		left.text = str(MatchState.AWAKEN_CONQUESTS - conquests)
+		left.add_theme_font_size_override("font_size", 12)
+		left.add_theme_color_override("font_outline_color", Color.BLACK)
+		left.add_theme_constant_override("outline_size", 4)
+		left.position = Vector2(3, PORTRAIT - 18)
+		left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.add_child(left)
 	var tip := "%s — %s\n%s: %s" % [g.get("name", ""), g.get("title", ""), g.get("boon_name", ""), g.get("boon_text", "")]
 	if g.has("bane_name"):
 		tip += "\n%s: %s" % [g["bane_name"], g["bane_text"]]
@@ -95,6 +116,36 @@ func _portrait(god_id: String, awake: bool, state: MatchState, conquests: int = 
 		tip += "\n(Asleep: wakes after %d conquests — %d so far.)" % [MatchState.AWAKEN_CONQUESTS, conquests]
 	holder.tooltip_text = tip
 	return holder
+
+
+## An icon with a number after it (no icon art: a short word instead), e.g. the favour flame and "3".
+func _stat(row: HBoxContainer, icon_name: String, text: String, tip: String) -> void:
+	if icon_name != "" and Looks.icon(icon_name) != null:
+		row.add_child(_icon(icon_name, 18, tip))
+	elif icon_name != "":
+		text = {"reinforce": "Reinf. ", "reserve": "Res. ", "favour": "Fav. "}[icon_name] + text
+	var l := Label.new()
+	l.text = text
+	l.tooltip_text = tip
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	l.add_theme_font_size_override("font_size", 12)
+	row.add_child(l)
+	var gap := Control.new()
+	gap.custom_minimum_size.x = 4
+	row.add_child(gap)
+
+
+func _icon(icon_name: String, side: float, tip: String) -> TextureRect:
+	var r := TextureRect.new()
+	r.texture = Looks.icon(icon_name)
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE  # first, or the picture's own size stays the minimum
+	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	r.custom_minimum_size = Vector2(side, side)
+	r.size = Vector2(side, side)
+	r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.tooltip_text = tip
+	r.mouse_filter = Control.MOUSE_FILTER_PASS if tip != "" else Control.MOUSE_FILTER_IGNORE
+	return r
 
 
 func _texture(god_id: String) -> Texture2D:

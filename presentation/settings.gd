@@ -47,6 +47,28 @@ func _ready() -> void:
 	speed.item_selected.connect(func(i: int) -> void: GameSettings.anim_speed = i)
 	row.add_child(speed)
 
+	var hold_row := HBoxContainer.new()
+	hold_row.add_theme_constant_override("separation", 12)
+	col.add_child(hold_row)
+	var hold_label := Label.new()
+	hold_label.text = "Battle result shown"
+	hold_row.add_child(hold_label)
+	var hold := OptionButton.new()
+	for n in GameSettings.HOLD_NAMES:
+		hold.add_item(n)
+	hold.selected = GameSettings.battle_hold
+	hold.item_selected.connect(func(i: int) -> void: GameSettings.battle_hold = i)
+	hold_row.add_child(hold)
+
+	var rivals := CheckButton.new()
+	rivals.text = "Show battles between rivals too"
+	rivals.tooltip_text = "Off: battles you are not in are shown only on the map (an arrow, then the outcome)."
+	rivals.button_pressed = GameSettings.hold_rivals
+	rivals.toggled.connect(func(on: bool) -> void:
+		GameSettings.hold_rivals = on
+		Sound.play("toggle"))
+	col.add_child(rivals)
+
 	if AppWindow.can_fullscreen():
 		var full := CheckButton.new()
 		full.text = "Full screen (F11)"

@@ -34,6 +34,9 @@ func _run() -> void:
 			GameSettings.ensure_loaded()
 			GameSettings.set_pantheon(arg.get_slice("=", 1))
 	DirAccess.make_dir_recursive_absolute(out)
+	GameSettings.ensure_loaded()
+	GameSettings.battle_hold = 1  # results shown for a moment, never waiting (except below)
+	GameSettings.awakening = "start"  # both gods awake, so their bonuses show in the battles
 	root.size = win_size
 	DisplayServer.window_set_size(win_size)
 	await get_tree().process_frame
@@ -78,11 +81,29 @@ func _run() -> void:
 			game._on_hovered(best[1])
 			await get_tree().create_timer(0.3).timeout
 			_save(out, "game_human_turn" + suffix)
+			GameSettings.battle_hold = GameSettings.HOLDS.find(GameSettings.WAIT)  # this one waits for Continue
 			game._on_territory_clicked(best[1])
 			await get_tree().create_timer(0.75).timeout
 			_save(out, "game_battle" + suffix)
+			await get_tree().create_timer(1.6).timeout
+			_save(out, "game_battle_end" + suffix)
+			game._battle.accept()
+			GameSettings.battle_hold = 1
 		await get_tree().create_timer(2.0).timeout
 		_save(out, "game_later" + suffix)
+		# The map's effects: lightning, golden motes, dust and a ward, zoomed in on four territories.
+		if not game._over:
+			view._zoom_at(view.size / 2.0, 1.8)
+			var some: Array = range(state.map.count())
+			some.sort_custom(func(x: int, y: int) -> bool:
+				return view.territory_screen_pos(x).distance_to(view.size / 2.0) < view.territory_screen_pos(y).distance_to(view.size / 2.0))
+			state.wards[some[3]] = {"player": state.owners[some[3]], "bonus": 5}
+			view.refresh()
+			view.play_fx("lightning", some[0], 3.0, 80.0, 34.0)
+			view.play_fx("motes", some[1], 3.0, 60.0, 18.0)
+			view.play_fx("dust", some[2], 3.0, 60.0, 10.0)
+			await get_tree().create_timer(0.5).timeout
+			_save(out, "game_fx" + suffix)
 	get_tree().quit()
 
 
