@@ -2,6 +2,10 @@ extends Control
 ## New War, step 1: the pantheon (which also sets the realm: the menus and the map take its look) and
 ## the match options. Step 2 is the choice of gods (god_select).
 
+const TILE := Vector2(140, 100)  ## a pantheon's tile (its die and name inside the button's frame), grown with the text
+const DIE := 46.0
+const TILE_GAP := 10
+
 var _backdrop: MenuBackdrop
 var _pantheon_buttons: Dictionary = {}  ## pantheon id -> Button
 
@@ -11,26 +15,42 @@ func _ready() -> void:
 	var col := Ui.centered_column(self, 10)
 	Ui.title(col, "New War")
 
+	# The pantheons and the options: side by side where the screen is wide enough (a computer, a tablet
+	# held sideways), else one above the other (and the panel scrolls if it must).
+	var body := BoxContainer.new()
+	body.add_theme_constant_override("separation", 28)
+	col.add_child(body)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 8)
+	body.add_child(left)
 	var heading := Label.new()
 	heading.text = "Choose your pantheon"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(heading)
+	left.add_child(heading)
 	var grid := HFlowContainer.new()
 	grid.alignment = FlowContainer.ALIGNMENT_CENTER
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 10)
-	col.add_child(grid)
-	Ui.on_resize(grid, func() -> void:
-		grid.custom_minimum_size.x = minf(4 * 150 + 10, Ui.panel_content_width()))
+	grid.add_theme_constant_override("h_separation", TILE_GAP)
+	grid.add_theme_constant_override("v_separation", TILE_GAP)
+	left.add_child(grid)
 	var group := ButtonGroup.new()
 	for p in GodCatalog.PANTHEONS:
-		grid.add_child(_pantheon_button(p, group))
+		var b := _pantheon_button(p, group)
+		grid.add_child(b)
+		var die: Control = b.get_meta("die")
+		var name_label: Label = b.get_meta("name_label")
+		Ui.on_resize(b, func() -> void:
+			var k := UiTheme.ui_scale()
+			b.custom_minimum_size = TILE * k
+			die.custom_minimum_size = Vector2(DIE, DIE) * k
+			# Long names (Mesopotamian) get a smaller font rather than spilling over the frame.
+			Ui.fit_font(name_label, roundi(18.0 * k), TILE.x * k - 24.0))
 
 	var options := GridContainer.new()
 	options.columns = 2
+	options.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	options.add_theme_constant_override("h_separation", 14)
 	options.add_theme_constant_override("v_separation", 6)
-	col.add_child(options)
+	body.add_child(options)
 	_option(options, "Players", range(2, 9).map(func(n: int) -> String: return "%d (you and %d %s)" % [n, n - 1, "rival" if n == 2 else "rivals"]),
 		GameSettings.players - 2, func(i: int) -> void: GameSettings.players = i + 2)
 	var sizes: Array = MapGenerator.SIZES.keys()
@@ -58,27 +78,52 @@ func _ready() -> void:
 		GameSettings.save()
 		get_tree().change_scene_to_file("res://presentation/main_menu.tscn"))
 	row.add_child(back)
+	var book := IconButton.new(IconButton.Icon.BOOK, false, "Book of the Gods: every pantheon's gods, their powers and stories")
+	book.pressed.connect(func() -> void:
+		GameSettings.save()
+		GodBook.open(get_tree(), "res://presentation/new_war.tscn"))
+	row.add_child(book)
 	var next := IconButton.new(IconButton.Icon.NEXT, true, "Choose your gods")
 	next.pressed.connect(_on_next)
 	row.add_child(next)
+
+	# Side by side with as many tile columns as fit (4, 3 or 2); else the tiles above the options.
+	Ui.on_resize(body, func() -> void:
+		var room := Ui.panel_content_width()
+		# (some room to spare: the realms' frames are wider than the plain panel's margin)
+		var beside := room - 28.0 - options.get_combined_minimum_size().x - 60.0
+		var columns := 4
+		while columns >= 2 and _tiles_width(columns) > beside:
+			columns -= 1
+		body.vertical = columns < 2
+		grid.custom_minimum_size.x = minf(_tiles_width(4 if body.vertical else columns), room))
+
+
+## The width of `columns` tiles in a row.
+static func _tiles_width(columns: int) -> float:
+	return columns * (TILE.x * UiTheme.ui_scale() + TILE_GAP) - TILE_GAP + 1.0
 
 
 func _pantheon_button(p: Dictionary, group: ButtonGroup) -> Button:
 	var b := Button.new()
 	b.toggle_mode = true
 	b.button_group = group
-	b.custom_minimum_size = Vector2(140, 92)
 	b.button_pressed = p["id"] == GameSettings.pantheon
 	b.focus_mode = Control.FOCUS_NONE
 	b.tooltip_text = p["realm"]
+	# Kept clear of the frame (some realms' button frames are wide).
 	var box := VBoxContainer.new()
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	box.offset_left = 12.0
+	box.offset_right = -12.0
+	box.offset_top = 12.0
+	box.offset_bottom = -8.0
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 2)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(box)
 	var die := TextureRect.new()
 	die.texture = DiceArt.face(p["dice"], 1)
-	die.custom_minimum_size = Vector2(52, 52)
 	die.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	die.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	die.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -89,6 +134,8 @@ func _pantheon_button(p: Dictionary, group: ButtonGroup) -> Button:
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
+	b.set_meta("name_label", name_label)
+	b.set_meta("die", die)
 	Ui.hover_effect(b, "toggle")
 	Ui.mark_choice(b)
 	b.toggled.connect(func(on: bool) -> void:

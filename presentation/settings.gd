@@ -61,11 +61,11 @@ func _ready() -> void:
 	hold_row.add_child(hold)
 
 	var rivals := CheckButton.new()
-	rivals.text = "Show battles between rivals too"
-	rivals.tooltip_text = "Off: battles you are not in are shown only on the map (an arrow, then the outcome)."
-	rivals.button_pressed = GameSettings.hold_rivals
+	rivals.text = "Show the computer's battles"
+	rivals.tooltip_text = "Off: the computer's attacks (on you too) are shown only on the map: an arrow for a second, then the outcome."
+	rivals.button_pressed = GameSettings.show_ai_battles
 	rivals.toggled.connect(func(on: bool) -> void:
-		GameSettings.hold_rivals = on
+		GameSettings.show_ai_battles = on
 		Sound.play("toggle"))
 	col.add_child(rivals)
 

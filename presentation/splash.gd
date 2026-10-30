@@ -1,6 +1,6 @@
 extends Control
 ## First screen: the key art (assets/branding: the wide picture, or the tall one on a screen held
-## upright) slowly drawing closer, with the title in the sky above the island; then a fade into the
+## upright), still, with the title in the sky above the island; then a fade into the
 ## main menu. Without the key art, the realm's painting. A click or key press skips it.
 
 const DURATION := 3.0
@@ -12,7 +12,7 @@ var _leaving := false
 
 
 func _ready() -> void:
-	Ui.setup_screen(self)
+	Ui.setup_screen(self, false)  # a still backdrop (only seen without the key art)
 	var art := _key_art()
 	if art != null:
 		_show_art(art)
@@ -82,7 +82,7 @@ func _key_art() -> Texture2D:
 	return load(path) if ResourceLoader.exists(path) else null
 
 
-## The picture over the whole screen (cropped to fill it), drifting slowly closer.
+## The picture over the whole screen (cropped to fill it), still.
 func _show_art(art: Texture2D) -> void:
 	var pic := TextureRect.new()
 	pic.texture = art
@@ -92,10 +92,6 @@ func _show_art(art: Texture2D) -> void:
 	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(pic)
-	var drift := func() -> void: pic.pivot_offset = pic.size / 2.0
-	pic.resized.connect(drift)
-	drift.call()
-	pic.create_tween().tween_property(pic, "scale", Vector2(1.06, 1.06), DURATION + FADE).from(Vector2.ONE)
 
 
 func _unhandled_input(event: InputEvent) -> void:

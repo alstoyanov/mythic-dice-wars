@@ -195,17 +195,19 @@ func _attack(from: int, to: int, speed: float) -> void:
 	var involves_player: bool = result["attacker"] == human or result["defender"] == human
 	if not seen:  # a battle somewhere in the fog: nothing to show
 		pass
-	elif involves_player or GameSettings.hold_rivals:
+	elif result["attacker"] == human or GameSettings.show_ai_battles:
 		await _battle.play(result, state, speed)
-		var hold := GameSettings.result_hold(involves_player)
+		var hold := GameSettings.result_hold()
 		if hold != GameSettings.WAIT and not involves_player:
 			hold /= speed  # battles between rivals follow the animation speed
-		if hold == GameSettings.WAIT:
+		if hold == GameSettings.WAIT and involves_player:
 			_say("Press Continue (or click anywhere, Enter or Space).")
+		elif hold == GameSettings.WAIT:
+			hold = GameSettings.HOLDS[0] / speed  # no waiting on battles between rivals
 		await _battle.hold(hold)
 		await _battle.hide_panel(speed)
-	else:  # a battle between rivals: only the arrow on the map, then the outcome
-		await get_tree().create_timer(0.45 / speed).timeout
+	else:  # the computer's attack: only the arrow on the map for a second, then the outcome
+		await get_tree().create_timer(GameSettings.MAP_BATTLE).timeout
 	_view.arrow = Vector2i(-1, -1)
 	_view.selected = -1
 	_view.refresh()

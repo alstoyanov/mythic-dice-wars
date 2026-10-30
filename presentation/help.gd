@@ -48,7 +48,7 @@ Your head start is shown under your name during the first round. [b]Classic[/b] 
 
 [b]Map.[/b] Zoom with the mouse wheel or a pinch, drag to look around, right-click to cancel a choice. Hover a target to see your chance to win and what the gods add.
 
-[b]Battles.[/b] Every battle you fight in fills the screen: both armies' dice tumble out of their towers. Under each tray the total is taken apart: the dice, then every god's bonus or penalty by name. A die with a gold frame was a 1 that a god had rolled again. In Settings you choose how long the result stays, or to wait until you press Continue (or click anywhere), and whether to watch the battles between your rivals too.
+[b]Battles.[/b] Every attack you make fills the screen: both armies' dice tumble out of their towers. Under each tray the total is taken apart: the dice, then every god's bonus or penalty by name. A die with a gold frame was a 1 that a god had rolled again. In Settings you choose how long the result stays, or to wait until you press Continue (or click anywhere). The computer's attacks, on you too, are shown only on the map: an arrow for a second, then the outcome. Turn on "Show the computer's battles" in Settings to see their dice as well.
 
 """ % [MatchState.RESERVE_CAP, MatchState.AWAKEN_CONQUESTS]
 

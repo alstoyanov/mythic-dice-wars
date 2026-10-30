@@ -14,6 +14,9 @@ func _ready() -> void:
 	Ui.button(col, "New War", func() -> void: get_tree().change_scene_to_file("res://presentation/new_war.tscn"))
 	var quick := Ui.button(col, "Quick War", func() -> void: get_tree().change_scene_to_file("res://presentation/game_screen.tscn"))
 	quick.tooltip_text = "Straight into a war with your last choices."
+	var book := Ui.button(col, "Book of the Gods", func() -> void:
+		GodBook.open(get_tree(), "res://presentation/main_menu.tscn"))
+	book.tooltip_text = "Every pantheon and its gods: their powers and their stories."
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER

@@ -3,6 +3,8 @@ extends Control
 ## with a severe flaw), from the chosen pantheon. Cards show the portrait and the powers.
 
 const CARD_WIDTH := 210.0
+const CARD_WIDTH_MAX := 300.0  ## wider where there is room: the text takes fewer lines, the cards less height
+const CARD_MARGIN := 13  ## clear of the button's frame (some realms' frames are wide)
 
 
 func _ready() -> void:
@@ -32,11 +34,15 @@ func _section(col: Control, heading_text: String, role: String) -> void:
 	flow.add_theme_constant_override("h_separation", 10)
 	flow.add_theme_constant_override("v_separation", 10)
 	col.add_child(flow)
-	Ui.on_resize(flow, func() -> void:
-		flow.custom_minimum_size.x = minf(3 * (CARD_WIDTH + 10), Ui.panel_content_width()))
 	var group := ButtonGroup.new()
 	for g in GodCatalog.gods_of(GameSettings.pantheon, role):
 		flow.add_child(_card(g, group, role))
+	Ui.on_resize(flow, func() -> void:
+		var room := Ui.panel_content_width()
+		var width := clampf((room - 2 * 10 - 40) / 3.0, CARD_WIDTH, CARD_WIDTH_MAX)
+		for card in flow.get_children():
+			(card as Control).custom_minimum_size.x = width
+		flow.custom_minimum_size.x = minf(3 * (width + 10), room))
 
 
 func _card(g: Dictionary, group: ButtonGroup, role: String) -> Button:
@@ -50,7 +56,7 @@ func _card(g: Dictionary, group: ButtonGroup, role: String) -> Button:
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 8)
+		margin.add_theme_constant_override("margin_" + side, CARD_MARGIN)
 	b.add_child(margin)
 	var box := VBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -79,7 +85,7 @@ func _card(g: Dictionary, group: ButtonGroup, role: String) -> Button:
 		box.add_child(_text("%s: %s" % [g["bane_name"], g["bane_text"]], 13, Color(1.0, 0.65, 0.6)))
 	# A card is as tall as its text: the button takes the box's height.
 	box.minimum_size_changed.connect(func() -> void:
-		b.custom_minimum_size.y = box.get_combined_minimum_size().y + 16)
+		b.custom_minimum_size.y = box.get_combined_minimum_size().y + 2 * CARD_MARGIN)
 	Ui.hover_effect(b, "toggle")
 	Ui.mark_choice(b)
 	b.toggled.connect(func(on: bool) -> void:
