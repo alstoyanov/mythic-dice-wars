@@ -1,0 +1,11 @@
+Interface sounds (click_003, tick_002, back_002, maximize_006, toggle_002)
+    "Interface Sounds" by Kenney (www.kenney.nl), CC0. License text: LICENSE-Kenney-InterfaceSounds.txt
+
+Game sounds (move_1-3, place, pick, crumble_1-2)
+    Built from recordings in "75 CC0 breaking / falling / hit sfx" by rubberduck (CC0),
+    https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+    The wood knocks and rock sounds were pitch-shifted, filtered, trimmed and layered (with a synthesized
+    scrape before each knock); no other changes to the recordings.
+
+Win and lose jingles (win, lose)
+    Synthesized for this game (additive horn-like voices, a drum thump and a little reverb). No samples.

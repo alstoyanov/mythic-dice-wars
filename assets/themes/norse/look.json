@@ -1,0 +1,22 @@
+{
+ "id": "norse",
+ "name": "Norse",
+ "palette": {
+  "bg_top": "#1c2430",
+  "bg_bottom": "#070a0f",
+  "panel": "#232c38e8",
+  "border": "#b39a6a",
+  "text": "#ece6da",
+  "accent": "#e3bf72",
+  "button": "#3a4656",
+  "hover": "#4d5c70",
+  "pressed": "#2a3340",
+  "marker": "#46c36b",
+  "hint": "#ffd23f"
+ },
+ "title_font": "RuslanDisplay-Regular.ttf",
+ "weather": "snow",
+ "panel_margin": 28,
+ "panel_small_margin": 14,
+ "button_margin": 14
+}

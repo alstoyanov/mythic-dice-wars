@@ -1,0 +1,22 @@
+{
+ "id": "chinese",
+ "name": "Chinese",
+ "palette": {
+  "bg_top": "#221817",
+  "bg_bottom": "#0b0808",
+  "panel": "#2a1716e8",
+  "border": "#c9a24c",
+  "text": "#f4eadb",
+  "accent": "#e9b75a",
+  "button": "#4a2621",
+  "hover": "#63342c",
+  "pressed": "#381c18",
+  "marker": "#ff9a2e",
+  "hint": "#ffe066"
+ },
+ "title_font": "Kurale-Regular.ttf",
+ "weather": "petals",
+ "panel_margin": 28,
+ "panel_small_margin": 14,
+ "button_margin": 14
+}

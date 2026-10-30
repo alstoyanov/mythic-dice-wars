@@ -1,0 +1,22 @@
+{
+ "id": "greek",
+ "name": "Greek",
+ "palette": {
+  "bg_top": "#2a2320",
+  "bg_bottom": "#0e0b0a",
+  "panel": "#352b26e8",
+  "border": "#c98b5a",
+  "text": "#f3ece2",
+  "accent": "#e39a5f",
+  "button": "#4d3b31",
+  "hover": "#65503f",
+  "pressed": "#3a2c24",
+  "marker": "#46c36b",
+  "hint": "#ffd23f"
+ },
+ "title_font": "Forum-Regular.ttf",
+ "weather": "haze",
+ "panel_margin": 28,
+ "panel_small_margin": 14,
+ "button_margin": 14
+}

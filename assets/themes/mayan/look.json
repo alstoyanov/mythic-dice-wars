@@ -1,0 +1,22 @@
+{
+ "id": "mayan",
+ "name": "Maya",
+ "palette": {
+  "bg_top": "#1f2a1f",
+  "bg_bottom": "#0b100c",
+  "panel": "#1f2419e8",
+  "border": "#c49a52",
+  "text": "#f1ecd8",
+  "accent": "#5fd0a0",
+  "button": "#2e3a2a",
+  "hover": "#3f4f39",
+  "pressed": "#222b1f",
+  "marker": "#46c36b",
+  "hint": "#ffd23f"
+ },
+ "title_font": "Macondo-Regular.ttf",
+ "weather": "rain",
+ "panel_margin": 28,
+ "panel_small_margin": 14,
+ "button_margin": 14
+}

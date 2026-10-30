@@ -1,0 +1,23 @@
+{
+ "id": "mesopotamian",
+ "name": "Mesopotamian",
+ "palette": {
+  "bg_top": "#1d2236",
+  "bg_bottom": "#0a0c14",
+  "panel": "#1a1e30e8",
+  "border": "#d6ad55",
+  "text": "#f2ead6",
+  "accent": "#e8c063",
+  "button": "#26305a",
+  "hover": "#34417a",
+  "pressed": "#1b2242",
+  "marker": "#46c36b",
+  "hint": "#ffd23f"
+ },
+ "title_font": "ElMessiri.ttf",
+ "weather": "sand",
+ "panel_margin": 28,
+ "panel_small_margin": 14,
+ "button_margin": 14,
+ "title_font_weight": 600
+}

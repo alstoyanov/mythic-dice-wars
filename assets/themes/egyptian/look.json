@@ -1,0 +1,22 @@
+{
+ "id": "egypt",
+ "name": "Egyptian",
+ "palette": {
+  "bg_top": "#2c2417",
+  "bg_bottom": "#0f0c08",
+  "panel": "#2a2116e8",
+  "border": "#c8a45a",
+  "text": "#f4ead2",
+  "accent": "#e6c25a",
+  "button": "#4a3b24",
+  "hover": "#62502f",
+  "pressed": "#382c1a",
+  "marker": "#46c36b",
+  "hint": "#ffd23f"
+ },
+ "title_font": "KellySlab-Regular.ttf",
+ "weather": "sand",
+ "panel_margin": 28,
+ "panel_small_margin": 14,
+ "button_margin": 14
+}
