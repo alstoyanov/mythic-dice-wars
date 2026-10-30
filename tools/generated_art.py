@@ -26,7 +26,14 @@ Kinds of cutting:
   appicon:<x0,y0,x1,y1,r>:<side>
                            the app icon: the generator paints the rounded square on a background, so the
                            square (box x0..x1, y0..y1 in the source, corner radius r) is cut out, its
-                           corners made transparent, and saved at side × side pixels
+                           corners made transparent, and saved at side × side pixels (a .ico file: at
+                           16-256 pixels in one file, for Windows)
+  adaptive:<x0,y0,x1,y1,r>:<side>
+                           the background layer of Android's adaptive icon: launchers show only the middle
+                           two thirds of it, cut to a circle or another shape, so the inside of the rounded
+                           square (clear of its corners) is set in the middle of a larger layer of its own
+                           background colour, with a soft edge, so the whole picture stays in view
+  empty:<side>             a transparent square (the adaptive icon's foreground: the picture is all background)
 Needs Pillow, numpy and scipy.
 """
 import json
@@ -74,6 +81,10 @@ GENERATED = {
     "key/key_art_portrait.jpg": ("branding/key_art_portrait.jpg", "picture:1920"),
     "key/icon.jpg": ("branding/icon.png", "appicon:181,183,1867,1869,360:512"),
     "key/icon.jpg#small": ("../icon.png", "appicon:181,183,1867,1869,360:256"),  # the project / window icon
+    "key/icon.jpg#ico": ("branding/icon.ico", "appicon:181,183,1867,1869,360:256"),  # the Windows .exe icon
+    "key/icon.jpg#android": ("branding/android_main_192.png", "appicon:181,183,1867,1869,360:192"),
+    "key/icon.jpg#adaptive": ("branding/android_bg_432.png", "adaptive:181,183,1867,1869,360:432"),
+    "key/icon.jpg#empty": ("branding/android_fg_432.png", "empty:432"),
     # HUD icons (shared)
     f"hud_icons/{G}a2z6uda2z6uda2z6.jpg": ("ui/icons/reinforce.png", "icon"),
     f"hud_icons/{G}d0adu2d0adu2d0ad.jpg": ("ui/icons/defence.png", "icon"),
@@ -251,7 +262,33 @@ def process(src: Path, dst: Path, kind: str) -> None:
         big = Image.new("L", (square.size[0] * 4, square.size[1] * 4), 0)
         ImageDraw.Draw(big).rounded_rectangle((0, 0, big.size[0] - 1, big.size[1] - 1), radius=r * 4, fill=255)
         square.putalpha(big.resize(square.size, Image.LANCZOS))
-        square.resize((int(side), int(side)), Image.LANCZOS).save(dst, optimize=True)
+        out = square.resize((int(side), int(side)), Image.LANCZOS)
+        if dst.suffix == ".ico":
+            out.save(dst, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+        else:
+            out.save(dst, optimize=True)
+    elif kind.startswith("adaptive:"):
+        _, box, side = kind.split(":")
+        x0, y0, x1, y1, r = (int(v) for v in box.split(","))
+        inset = round(r * 0.32)  # clear of the rounded corners
+        inner = img.convert("RGB").crop((x0 + inset, y0 + inset, x1 - inset, y1 - inset))
+        # The picture fills 62% of the layer (the launcher shows 67%, and a round mask cuts the corners).
+        layer = round(inner.size[0] / 0.62)
+        edge = np.asarray(inner).reshape(-1, 3)
+        ring = np.concatenate([np.asarray(inner)[:8].reshape(-1, 3), np.asarray(inner)[-8:].reshape(-1, 3),
+                               np.asarray(inner)[:, :8].reshape(-1, 3), np.asarray(inner)[:, -8:].reshape(-1, 3)])
+        colour = tuple(int(c) for c in np.median(ring if len(ring) else edge, axis=0))
+        canvas = Image.new("RGB", (layer, layer), colour)
+        feather = inner.size[0] // 6
+        ramp = np.minimum(np.arange(inner.size[0]), np.arange(inner.size[0])[::-1]) / feather
+        ramp = np.clip(ramp, 0.0, 1.0)
+        mask = Image.fromarray((np.minimum.outer(ramp, ramp) * 255).astype(np.uint8), "L")
+        offset = (layer - inner.size[0]) // 2
+        canvas.paste(inner, (offset, offset), mask)
+        canvas.resize((int(side), int(side)), Image.LANCZOS).convert("RGBA").save(dst, optimize=True)
+    elif kind.startswith("empty:"):
+        n = int(kind.split(":")[1])
+        Image.new("RGBA", (n, n), (0, 0, 0, 0)).save(dst, optimize=True)
     else:
         raise ValueError(kind)
 

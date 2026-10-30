@@ -656,8 +656,15 @@ Save = `{seed, options, player defs, actions: [["attack", from, to], ["miracle",
 - Textures: dice faces are 256² with mipmaps. God portraits are 512² (thumbs from Tile Shifter).
 - Target: 60 fps on a mid-range Android phone (Snapdragon 7-class), 30 fps floor on low-end phones, a web build under 40 MB.
 
-### 13.4 Builds [MVP]
-Copy Chasm of Knights' `export_guard` editor plugin and presets: Windows, Web (slim), Android (dev / full / basic editions). Use the Compatibility renderer everywhere.
+### 13.4 Builds [POC]
+`export_presets.cfg` has **Windows Desktop** (`export/windows/Mythic Dice Wars.exe`, the .pck inside the .exe, ~190 MB) and **Android** (`export/android/Mythic Dice Wars.apk`, arm64, package `com.mytholore.mythicdicewars`, ~115 MB), set up like Mythos Academy's. Both take every resource plus `*.json` (the realms' `look.json` and the towers' `layout.json` are plain files, not resources) and leave out `tests/`, `tools/` and `docs/`. The Compatibility renderer everywhere.
+
+```sh
+godot --headless --path . --export-release "Windows Desktop" "export/windows/Mythic Dice Wars.exe"
+godot --headless --path . --export-debug "Android" "export/android/Mythic Dice Wars.apk"
+```
+
+A release APK for a store needs a release keystore (Project > Export > Android > Keystore). The icons come from the key art's `icon.jpg` (`tools/generated_art.py`): the project icon, the Windows `.ico` (16–256 px), Android's legacy 192 px icon and its adaptive icon (the picture as the background layer, set within the middle two thirds that launchers show; an empty foreground). [MVP]: a Web build, and Chasm of Knights' `export_guard` plugin.
 
 ### 13.5 Testing
 - `tests/sim_test.gd`: invariants and balance (headless, CI-friendly; ~80 s for 600 wars). A quarter of the wars are played under fog of war, and the **fog blindness check** (§4.8) runs first. It ends with the **turn-order check**: 100 wars each of 2 and 4 Warlords with the head start, wins printed by place in the turn order, and a failure if the first of two players wins outside 35–65% (`--seats=N` changes the count, `--seats=0` skips it).
