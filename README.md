@@ -3,7 +3,7 @@
 A turn-based territory war of dice and gods on a floating isometric island (Godot 4.7). Proof of concept.
 
 - **Design:** [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md) (rules, gods, visuals, UI, tech, roadmap)
-- **Art and audio still to make:** [docs/ART_AND_AUDIO_PROMPTS.md](docs/ART_AND_AUDIO_PROMPTS.md)
+- **Art and audio still to make:** [docs/art_prompts/](docs/art_prompts/README.md) (one file per kind of asset, every prompt ready to paste)
 - **Original brief:** [docs/basic_game_specification.md](docs/basic_game_specification.md)
 
 ## Run

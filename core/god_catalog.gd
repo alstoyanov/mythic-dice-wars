@@ -37,6 +37,7 @@ const PANTHEONS: Array[Dictionary] = [
 	{"id": "chinese", "name": "Chinese", "realm": "The Celestial Court", "dice": "chinese"},
 	{"id": "mayan", "name": "Mayan", "realm": "Xibalba and the Milpa", "dice": "mayan"},
 	{"id": "mesopotamian", "name": "Mesopotamian", "realm": "Land Between the Rivers", "dice": "mesopotamian"},
+	{"id": "yoruba", "name": "Yoruba", "realm": "Ile-Ife, Where the World Began", "dice": "yoruba"},
 ]
 
 const PRIMARY := "primary"
@@ -193,6 +194,31 @@ const GODS: Array[Dictionary] = [
 		"boon": {"max_dice_bonus": 2, "reinforce_bonus": 2},
 		"bane_name": "Brood Hunger", "bane_text": "At the end of each turn your largest stack loses 1 die.",
 		"bane": {"tribute": 1}},
+	# --- Yoruba -------------------------------------------------------------------------------
+	{"id": "shango", "pantheon": "yoruba", "role": PRIMARY, "name": "Shango", "title": "King of Thunder",
+		"boon_name": "Thunderstones", "boon_text": "+1 to every attack (+3 on the first each turn), and your attacks win ties.",
+		"boon": {"attack_bonus": 1, "first_attack_bonus": 2, "attack_wins_ties": true}},
+	{"id": "yemoja", "pantheon": "yoruba", "role": PRIMARY, "name": "Yemoja", "title": "Mother of the Waters",
+		"boon_name": "Ocean's Embrace", "boon_text": "+2 reinforcement dice, and a territory that holds against an attack gains 1 die.",
+		"boon": {"reinforce_bonus": 2, "defend_reward": 1}},
+	{"id": "obatala", "pantheon": "yoruba", "role": PRIMARY, "name": "Obatala", "title": "Father of the White Cloth",
+		"boon_name": "Shaper of the World", "boon_text": "+1 to every defence, +1 reinforcement die, and reinforcements go to your borders first.",
+		"boon": {"defense_bonus": 1, "reinforce_bonus": 1, "smart_reinforce": true}},
+	{"id": "ogun", "pantheon": "yoruba", "role": SECONDARY, "name": "Ogun", "title": "Lord of Iron",
+		"boon_name": "Iron Path", "boon_text": "+2 to every attack, +1 more when attacking from a full stack.",
+		"boon": {"attack_bonus": 2, "full_stack_bonus": 1},
+		"bane_name": "Restless Blade", "bane_text": "-1 to the defence of every territory you hold.",
+		"bane": {"defense_bonus": -1}},
+	{"id": "oya", "pantheon": "yoruba", "role": SECONDARY, "name": "Oya", "title": "Queen of the Storm",
+		"boon_name": "Whirlwind", "boon_text": "Miracle (1 favour): strike an enemy territory, destroying 2 of its dice. +1 favour whenever you gain favour.",
+		"boon": {"miracle": {"kind": "smite", "amount": 2, "cost": 1}, "favor_bonus": 1},
+		"bane_name": "The Wind Turns", "bane_text": "-1 to the defence of every territory you hold.",
+		"bane": {"defense_bonus": -1}},
+	{"id": "esu", "pantheon": "yoruba", "role": SECONDARY, "name": "Esu", "title": "Keeper of the Crossroads",
+		"boon_name": "Crossroads", "boon_text": "+3 when attacking a larger army, and attacking 1s are rolled again.",
+		"boon": {"underdog_bonus": 3, "reroll_ones_attack": true},
+		"bane_name": "The Trickster's Price", "bane_text": "After a failed attack, another of your territories loses 1 die.",
+		"bane": {"hubris": 1}},
 ]
 
 

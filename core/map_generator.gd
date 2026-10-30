@@ -1,7 +1,8 @@
 class_name MapGenerator
 extends RefCounted
-## Makes a random realm: a single island of land (its outline seen from the isometric camera is a
-## wobbly ellipse of the requested width : height), cut into territories of about equal size.
+## Makes a random realm: a single island of land (its outline seen from the slanted camera is a
+## wobbly ellipse of the requested width : height) of square or hex cells, cut into territories of
+## about equal size.
 ## Deterministic for a given seed.
 
 ## Cells per territory on average.
@@ -15,41 +16,45 @@ const SIZES := {
 
 
 ## `territory_count`: how many territories; `aspect`: width / height of the island on screen
-## (about 1.6 for a wide window, 0.8 for a phone held upright).
-static func generate(seed_value: int, territory_count: int, aspect: float = 1.6) -> RealmMap:
+## (about 1.6 for a wide window, 0.8 for a phone held upright); `grid`: RealmMap.GRID_SQUARE or GRID_HEX.
+static func generate(seed_value: int, territory_count: int, aspect: float = 1.6,
+		grid: String = RealmMap.GRID_SQUARE) -> RealmMap:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	aspect = clampf(aspect, 0.6, 2.4)
 	var land_target := float(territory_count * CELLS_PER_TERRITORY)
-	# In screen units (one cell = a diamond 2 wide and 1 tall, area 1) the island is an ellipse with
-	# semi-axes a (across) and b (down).
-	var b := sqrt(land_target / (PI * aspect))
+	# In layout units (RealmMap.layout_pos) the island is an ellipse with semi-axes a (across) and b (down).
+	var b := sqrt(land_target * RealmMap.cell_area(grid) / (PI * aspect))
 	var a := aspect * b
-	var n := int(ceil(sqrt(a * a + 4.0 * b * b) * 1.3)) + 2
-	var c := (n - 1) / 2.0
+	var n: int
+	if grid == RealmMap.GRID_HEX:
+		n = int(ceil(maxf(2.0 * a / 1.5, 2.0 * b / (sqrt(3.0) * RealmMap.HEX_SQUASH)) * 1.3)) + 3
+	else:
+		n = int(ceil(sqrt(a * a + 4.0 * b * b) * 1.3)) + 2
 	var phases := [rng.randf() * TAU, rng.randf() * TAU, rng.randf() * TAU]
 
 	var m := RealmMap.new()
+	m.grid = grid
 	m.size = n
 	m.cell_territory.resize(n * n)
 	m.cell_territory.fill(-1)
+	var middle := (RealmMap.layout_pos(grid, Vector2i(0, 0)) + RealmMap.layout_pos(grid, Vector2i(n - 1, n - 1))) / 2.0
 	var land := {}
 	for y in n:
 		for x in n:
-			var sx := float(x - y)
-			var sy := (x + y - 2.0 * c) / 2.0
-			var ang := atan2(sy / b, sx / a)
+			var p := RealmMap.layout_pos(grid, Vector2i(x, y)) - middle
+			var ang := atan2(p.y / b, p.x / a)
 			var r := 1.0 + 0.14 * sin(3.0 * ang + phases[0]) + 0.08 * sin(5.0 * ang + phases[1]) \
 				+ 0.05 * sin(9.0 * ang + phases[2]) + rng.randf_range(-0.04, 0.04)
-			var d := sqrt((sx / a) * (sx / a) + (sy / b) * (sy / b))
+			var d := sqrt((p.x / a) * (p.x / a) + (p.y / b) * (p.y / b))
 			if d <= r:
 				land[Vector2i(x, y)] = true
-	land = _largest_component(land)
+	land = _largest_component(m, land)
 
 	var cells: Array[Vector2i] = []
 	cells.assign(land.keys())
 	cells.sort()  # dictionary order is insertion order, but be explicit: determinism matters
-	var seeds := _spread_seeds(cells, territory_count, rng)
+	var seeds := _spread_seeds(m, cells, territory_count, rng)
 	for i in seeds.size():
 		var t := RealmMap.Territory.new()
 		t.id = i
@@ -60,7 +65,7 @@ static func generate(seed_value: int, territory_count: int, aspect: float = 1.6)
 	return m
 
 
-static func _largest_component(land: Dictionary) -> Dictionary:
+static func _largest_component(m: RealmMap, land: Dictionary) -> Dictionary:
 	var best := {}
 	var seen := {}
 	var keys: Array = land.keys()
@@ -74,8 +79,7 @@ static func _largest_component(land: Dictionary) -> Dictionary:
 		while not stack.is_empty():
 			var cell: Vector2i = stack.pop_back()
 			part[cell] = true
-			for d in RealmMap.DIRS:
-				var nb: Vector2i = cell + d
+			for nb in m.cell_neighbors(cell):
 				if land.has(nb) and not seen.has(nb):
 					seen[nb] = true
 					stack.append(nb)
@@ -86,7 +90,7 @@ static func _largest_component(land: Dictionary) -> Dictionary:
 
 ## Seeds far apart from each other (each next one picked among the five cells farthest from the seeds
 ## so far, so maps differ).
-static func _spread_seeds(cells: Array[Vector2i], count: int, rng: RandomNumberGenerator) -> Array[Vector2i]:
+static func _spread_seeds(m: RealmMap, cells: Array[Vector2i], count: int, rng: RandomNumberGenerator) -> Array[Vector2i]:
 	var seeds: Array[Vector2i] = [cells[rng.randi_range(0, cells.size() - 1)]]
 	var nearest := PackedFloat32Array()
 	nearest.resize(cells.size())
@@ -95,7 +99,7 @@ static func _spread_seeds(cells: Array[Vector2i], count: int, rng: RandomNumberG
 		var last := seeds[seeds.size() - 1]
 		var ranked: Array = []
 		for i in cells.size():
-			nearest[i] = minf(nearest[i], Vector2(cells[i]).distance_squared_to(Vector2(last)))
+			nearest[i] = minf(nearest[i], RealmMap.layout_pos(m.grid, cells[i]).distance_squared_to(RealmMap.layout_pos(m.grid, last)))
 			ranked.append([nearest[i], i])
 		ranked.sort_custom(func(p: Array, q: Array) -> bool: return p[0] > q[0])
 		var pick: int = ranked[rng.randi_range(0, mini(4, ranked.size() - 1))][1]
@@ -139,8 +143,7 @@ static func _grow(m: RealmMap, land: Dictionary, seeds: Array[Vector2i], rng: Ra
 
 static func _open_neighbors(m: RealmMap, land: Dictionary, cell: Vector2i) -> Array:
 	var out: Array = []
-	for d in RealmMap.DIRS:
-		var nb := cell + d
+	for nb in m.cell_neighbors(cell):
 		if land.has(nb) and m.cell_territory[nb.y * m.size + nb.x] == -1:
 			out.append(nb)
 	return out

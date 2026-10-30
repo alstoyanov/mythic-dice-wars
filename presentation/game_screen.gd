@@ -35,7 +35,7 @@ func _ready() -> void:
 func _new_match() -> void:
 	var room := Ui.usable_size()
 	var aspect := 0.85 if room.x < room.y else 1.7
-	var realm := MapGenerator.generate(rng.randi(), MapGenerator.SIZES[GameSettings.map_size], aspect)
+	var realm := MapGenerator.generate(rng.randi(), MapGenerator.SIZES[GameSettings.map_size], aspect, GameSettings.grid)
 	var defs: Array = [{"name": "You", "pantheon": GameSettings.pantheon, "primary": GameSettings.primary,
 		"secondary": GameSettings.secondary, "is_ai": false}]
 	# Opponents: other pantheons first, every god at most once.
@@ -46,7 +46,7 @@ func _new_match() -> void:
 	pantheons.shuffle()
 	var used := {GameSettings.primary: true, GameSettings.secondary: true}
 	for i in GameSettings.players - 1:
-		var pan: String = pantheons[i % pantheons.size()] if i < pantheons.size() else GodCatalog.PANTHEONS[rng.randi_range(0, 5)]["id"]
+		var pan: String = pantheons[i % pantheons.size()] if i < pantheons.size() else GodCatalog.PANTHEONS[rng.randi_range(0, GodCatalog.PANTHEONS.size() - 1)]["id"]
 		var prim := _pick_god(pan, GodCatalog.PRIMARY, used)
 		var sec := _pick_god(pan, GodCatalog.SECONDARY, used)
 		defs.append({"name": GodCatalog.god(prim)["name"], "pantheon": pan, "primary": prim, "secondary": sec,

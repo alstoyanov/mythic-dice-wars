@@ -3,7 +3,7 @@
 > **Status:** Draft v1, written alongside the first proof of concept (POC).
 > **Engine:** Godot 4.7, statically typed GDScript, Compatibility renderer (desktop, web, mobile).
 > **Source brief:** [basic_game_specification.md](basic_game_specification.md).
-> **Companion:** [ART_AND_AUDIO_PROMPTS.md](ART_AND_AUDIO_PROMPTS.md) lists every picture and sound still to be made, with ready-to-paste prompts.
+> **Companion:** [art_prompts/](art_prompts/README.md) lists every picture and sound still to be made, one file per kind of asset, every prompt ready to paste.
 >
 > Markers: **[POC]** = built and playable now · **[MVP]** = needed for the first release · **[LATER]** = after release.
 > Numbers in this document are the values in the code at the time of writing. The code is the source of truth (`core/match_state.gd`, `core/god_catalog.gd`).
@@ -100,8 +100,10 @@ The core mechanic belongs to a well-loved genre: territory dice battles, with ri
 ## 4. Rules
 
 ### 4.1 The realm [POC]
-- A realm is one island made of a square grid of **cells**, drawn isometrically. Cells are grouped into **territories** of about 22 cells each.
-- Two territories are **neighbours** when any of their cells share an edge (4-neighbourhood). Water separates nothing: there is only one island, and every territory can be reached.
+- A realm is one island made of **cells**, grouped into **territories** of about 22 cells each. A war option chooses the cells:
+  - **Isometric squares** (default): square cells drawn as 2:1 diamonds; 4 neighbours per cell.
+  - **Hexagons**: flat-topped hex cells in offset columns ("odd-q"), drawn from the same slanted camera (squashed to 62% height) with the same cliffs and elevation; 6 neighbours per cell. Borders are smoother and territories touch more neighbours, so wars are a little more open.
+- Two territories are **neighbours** when any of their cells share an edge. Water separates nothing: there is only one island, and every territory can be reached.
 - Sizes: **Small 18**, **Medium 28**, **Large 40** territories.
 - The island's outline follows the screen. A wide screen gets a wide island (aspect about 1.7) and a phone held upright gets a tall one (about 0.85). The map then fills the screen without scrolling.
 - Generation: a noisy ellipse of land (only its largest connected part is kept), seeds spread by farthest-point sampling, then territories grow from the seeds one cell at a time. Usually the smallest territory grows next, so sizes stay even. Every territory also gets a random **elevation** of 0–2 steps (looks only). Same seed → same map.
@@ -164,6 +166,7 @@ The core mechanic belongs to a well-loved genre: territory dice battles, with ri
 |---|---|---|
 | Players | 2–8 | [POC] |
 | Realm size | Small / Medium / Large | [POC] |
+| Board | Isometric squares / Hexagons | [POC] |
 | Rivals' skill | Novice / Warlord / Strategist | [POC] |
 | Secondary god | Wakes after 4 conquests / Awake from the start | [POC] |
 | Seat setup | each seat: Human (hotseat) / Computer / Closed | [MVP] |
@@ -292,13 +295,24 @@ These tables are generated from `core/god_catalog.gd` (after the second balance 
 | **Ereshkigal**, Queen of the Great Below | Secondary | **Seven Gates** — +3 to every defence. | **Land of No Return** — At most 2 attacks per turn. |
 | **Tiamat**, Mother of Monsters | Secondary | **Primordial Sea** — Your territories hold up to 10 dice, and +2 reinforcement dice. | **Brood Hunger** — At the end of each turn your largest stack loses 1 die. |
 
+#### Yoruba
+
+| God | Role | Boon | Bane |
+|---|---|---|---|
+| **Shango**, King of Thunder | Primary | **Thunderstones** — +1 to every attack (+3 on the first each turn), and your attacks win ties. | — |
+| **Yemoja**, Mother of the Waters | Primary | **Ocean's Embrace** — +2 reinforcement dice, and a territory that holds against an attack gains 1 die. | — |
+| **Obatala**, Father of the White Cloth | Primary | **Shaper of the World** — +1 to every defence, +1 reinforcement die, and reinforcements go to your borders first. | — |
+| **Ogun**, Lord of Iron | Secondary | **Iron Path** — +2 to every attack, +1 more when attacking from a full stack. | **Restless Blade** — -1 to the defence of every territory you hold. |
+| **Oya**, Queen of the Storm | Secondary | **Whirlwind** — Miracle (1 favour): strike an enemy territory, destroying 2 of its dice. +1 favour whenever you gain favour. | **The Wind Turns** — -1 to the defence of every territory you hold. |
+| **Esu**, Keeper of the Crossroads | Secondary | **Crossroads** — +3 when attacking a larger army, and attacking 1s are rolled again. | **The Trickster's Price** — After a failed attack, another of your territories loses 1 die. |
+
 ### 5.4 Favour and miracles [POC]
 - **Favour** is gained by **fighting**: +1 for every attack you make (win or lose) and +1 whenever you **lose** a territory ("faith grows in defeat"). Gods can add to every gain. Cap 12.
 - **Miracles** are active powers granted by some gods. They cost favour and can be used **once per turn per god**, at any point in your turn.
 
 | Kind | Effect | Gods (POC) |
 |---|---|---|
-| `smite` | an enemy territory loses N dice (never below 1) | Zeus (2 for 2), Hou Yi (3 for 2), Huracan (2 for 2) |
+| `smite` | an enemy territory loses N dice (never below 1) | Zeus (2 for 2), Hou Yi (3 for 2), Huracan (2 for 2), Oya (2 for 1) |
 | `bless` | one of your territories gains N dice (up to the cap) | Isis (3 for 4), Chaak (2 for 2) |
 | `ward` | one of your territories gets +N defence until your next turn | Guanyin (+5 for 1) |
 
@@ -324,10 +338,10 @@ These tables are generated from `core/god_catalog.gd` (after the second balance 
 | Chinese | ✔ jade and bronze | 12 | ✔ | ✔ |
 | Mayan | ✔ jungle stone | 12 | ✔ | ✔ |
 | Mesopotamian | ✔ fired clay | 12 | ✔ | ✔ |
-| Yoruba | ✘ (to make) | 12 | ✔ | — |
+| Yoruba | ✔ carved iroko and bronze | 12 | ✔ | ✔ |
 | Aztec, Celtic, Inca, Inuit, Japanese, Persian, Polynesian, Slavic | ✔ | ✘ (to make) | ✘ (to make) | — |
 
-Every dice skin is a 3 × 2 sheet of faces read as **values 1–6**. The faces are **count-coded**: 1 emblem, 2 crossed weapons, 3 creatures, 4 pillars, 5 objects, 6 rays. The value can be read without numbers. `tools/prepare_assets.py` cuts them out.
+Yoruba became playable as soon as its dice arrived (the portraits and theme already existed). Every dice skin is a 3 × 2 sheet of faces read as **values 1–6**. The faces are **count-coded**: 1 emblem, 2 crossed weapons, 3 creatures, 4 pillars, 5 objects, 6 rays. The value can be read without numbers. `tools/prepare_assets.py` cuts them out.
 
 ### 6.2 What a pantheon brings
 1. **Gods:** 3 + 3 in the POC, 12 at release (6 primary, 6 secondary).
@@ -336,7 +350,6 @@ Every dice skin is a 3 × 2 sheet of faces read as **values 1–6**. The faces a
 4. **Music theme [MVP]** and **voice barks [LATER]**.
 
 ### 6.3 Planned gods for the next pantheons (names only, design later)
-- **Yoruba:** Shango (primary: thunder, smite), Ogun (primary: iron, attack), Yemoja (primary: waters, reinforcements), Oya (secondary: storms), Esu (secondary: trickster, ties), Obaluaye (secondary: plague, tribute-on-others).
 - **Aztec:** Huitzilopochtli, Quetzalcoatl, Tlaloc / Tezcatlipoca, Mictlantecuhtli, Xipe Totec.
 - **Celtic:** the Dagda, Brigid, Lugh / the Morrígan, Cernunnos, Manannán.
 - **Japanese:** Amaterasu, Susanoo, Hachiman / Raijin, Inari, Izanami.
@@ -380,7 +393,8 @@ A **hand-painted diorama**: a floating island of raised land, seen from a fixed 
 **Now (POC, all drawn in code):**
 - Each cell is a raised block: a top diamond in the owner's colour (60% player colour over the realm's ground colour, with ±4.5% brightness noise per cell) and two cliff faces in the realm's cliff colour, darkening downwards.
 - Territory borders are dark lines on the top faces, the coast is a light rim, and the selection is outlined in gold. Elevation gives every territory its own plateau.
-- Draw order: cells sorted back to front by `x + y`, then `x`. Dice stacks are drawn after the terrain, also back to front.
+- Draw order: cells sorted back to front by their screen position (y, then x). Dice stacks are drawn after the terrain, also back to front.
+- Both boards share one drawing routine: a cell is its top outline (a diamond, or a hexagon flattened to 62%), the edges facing the camera become cliffs (2 for a diamond, 3 for a hexagon, each shaded by direction), and every edge knows which neighbour lies across it, for borders and the coast. Terrain tiles for the hex board are hexagonal versions of the same art ([art_prompts/01_terrain_tiles.md](art_prompts/01_terrain_tiles.md)).
 - A soft shadow of the island falls on the backdrop.
 
 **Next (MVP, with art):**
@@ -503,7 +517,7 @@ All strings go through `tr()` (as in Chasm of Knights). Planned first languages:
 - **Music [MVP]:** one calm menu theme per pantheon (60–90 s loop), one tense war loop per pantheon that layers in a percussion stem when any player is down to 3 territories, and short victory and defeat stings.
 - **SFX:** dice rattle (wood/stone/clay per skin), dice landing in the tray, conquest (stone crunch + horn), repelled (shield clang), reinforcement (soft drops), miracle per kind (thunder, choir swell, temple bell), awakening (deep gong + the god's leitmotif), UI ticks. The POC reuses Chasm of Knights' Kenney UI sounds and placeholder hits.
 - **Voice [LATER]:** one awakening line per god ("The war god wakes!"), short and language-neutral (a shout or chant).
-- Prompts for all of these are in [ART_AND_AUDIO_PROMPTS.md](ART_AND_AUDIO_PROMPTS.md).
+- Prompts for all of these are in [art_prompts/09_music.md](art_prompts/09_music.md) and [art_prompts/10_sound_effects.md](art_prompts/10_sound_effects.md).
 
 ---
 
@@ -610,7 +624,7 @@ Copy Chasm of Knights' `export_guard` editor plugin and presets: Windows, Web (s
 
 ### 14.1 What is in it
 - A complete war against 1–7 computer rivals, on a generated isometric island of 18/28/40 territories that fits the screen's shape.
-- 6 pantheons × 6 gods (36), all effect keys, favour and 3 kinds of miracle, secondary-god awakening.
+- 7 pantheons × 6 gods (42), all effect keys, favour and 3 kinds of miracle, secondary-god awakening.
 - Three AI levels with exact odds, anti-stall, miracle use.
 - Isometric map with elevation, cliffs, borders, selection, target pulses, zoom/pan/pinch, dice towers built from the real dice skins, count badges, collapse when zoomed out.
 - Battle panel with the real dice faces, bonuses and the outcome. Reinforcement and penalty floaters, banners for awakening and elimination, victory and defeat overlays.
@@ -636,11 +650,11 @@ godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=540x960] [
 |---|---|---|
 | **M0 — POC** ✔ | This build. | done |
 | **M1 — Vertical slice** | Terrain tiles + props for Greek and Norse, dice tower battles, music and SFX for 2 realms, pause / save / resume, hotseat, seat setup, mobile player strip, colour-blind emblems. | 4–6 weeks |
-| **M2 — Content complete (launch set)** | 6 pantheons × 12 gods, terrain art for all 6, balance at 2,000-war sims + playtests, Daily Omen, localisation (EN + 3), exports (Win, Web, Android). | 8–10 weeks |
+| **M2 — Content complete (launch set)** | 7 pantheons × 12 gods, terrain art for all 7, balance at 2,000-war sims + playtests, Daily Omen, localisation (EN + 3), exports (Win, Web, Android). | 8–10 weeks |
 | **M3 — Launch** | Store pages, trailer (from the screenshot test), analytics (opt-in), crash reporting. | 2 weeks |
 | **M4 — Campaign** | Eras of Myth for Greek and Norse, boss gods, unlocks. | 6–8 weeks |
 | **M5 — Online** | Mytholore server integration: ranked 1v1, casual FFA, friends, cloud saves. | 6 weeks |
-| **M6+** | New pantheons from the existing dice skins (Yoruba, Aztec, Celtic, Japanese, Slavic…), crossover wars, relics and shrines. | ongoing |
+| **M6+** | New pantheons from the existing dice skins (Aztec, Celtic, Japanese, Slavic…), crossover wars, relics and shrines. | ongoing |
 
 ---
 

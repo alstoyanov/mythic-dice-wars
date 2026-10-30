@@ -19,6 +19,7 @@ static var primary: String = "zeus"
 static var secondary: String = "ares"
 static var players: int = 4  ## 2..8, the player included
 static var map_size: String = "medium"  ## see MapGenerator.SIZES
+static var grid: String = "square"  ## the board's cells: RealmMap.GRID_SQUARE or GRID_HEX
 static var ai_level: int = 1  ## see AiPlayer.LEVEL_NAMES
 static var awakening: String = "milestone"  ## when secondary gods wake: "milestone" or "start"
 
@@ -44,6 +45,9 @@ static func ensure_loaded() -> void:
 	map_size = str(cfg.get_value("war", "map_size", map_size))
 	if not MapGenerator.SIZES.has(map_size):
 		map_size = "medium"
+	grid = str(cfg.get_value("war", "grid", grid))
+	if grid != RealmMap.GRID_HEX:
+		grid = RealmMap.GRID_SQUARE
 	ai_level = clampi(int(cfg.get_value("war", "ai_level", ai_level)), 0, AiPlayer.LEVEL_NAMES.size() - 1)
 	awakening = str(cfg.get_value("war", "awakening", awakening))
 	_fix_gods()
@@ -80,6 +84,7 @@ static func save() -> void:
 	cfg.set_value("war", "secondary", secondary)
 	cfg.set_value("war", "players", players)
 	cfg.set_value("war", "map_size", map_size)
+	cfg.set_value("war", "grid", grid)
 	cfg.set_value("war", "ai_level", ai_level)
 	cfg.set_value("war", "awakening", awakening)
 	cfg.save(SETTINGS_PATH)

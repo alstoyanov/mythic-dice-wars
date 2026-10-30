@@ -40,7 +40,7 @@ DICE_SKINS = {
     "egyptian": "dice_egypt.jpg", "greek": "dice_greek.jpg", "inca": "dice_inca.jpg",
     "inuit": "dice_inuit.jpg", "japanese": "dice_japan.jpg", "mayan": "dice_mayan.jpg",
     "mesopotamian": "dice_messopotamia.jpg", "norse": "dice_norse.jpg", "persian": "dice_persian.jpg",
-    "polynesian": "dice_polynesian.jpg", "slavic": "dice_slavic.jpg",
+    "polynesian": "dice_polynesian.jpg", "slavic": "dice_slavic.jpg", "yoruba": "dice_yoruba.jpg",
 }
 
 # pantheon id -> (Tile Shifter realm folder, Tile Shifter theme folder)
@@ -51,6 +51,7 @@ PANTHEONS = {
     "chinese": ("chinese", "chinese"),
     "mayan": ("mayan", "mayan"),
     "mesopotamian": ("mesopotamian", "mesopotamian"),
+    "yoruba": ("yoruba", "yoruba"),
 }
 
 SFX = ["click_003", "tick_002", "back_002", "maximize_006", "toggle_002", "win", "lose", "place", "pick",

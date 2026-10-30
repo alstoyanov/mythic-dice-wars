@@ -1,9 +1,12 @@
 class_name RealmView
 extends Control
 ## The isometric map: the island of territories drawn as raised blocks of land in their owner's
-## colour, with each territory's dice standing on it as a little tower of cubes.
+## colour, with each territory's dice standing on it as a little tower of cubes. The cells are
+## diamonds (a square grid) or flattened hexagons (a hex grid), see RealmMap.grid; both are drawn the
+## same way from the cell's outline (_shape), which edges border which neighbour (_edge_dir) and which
+## edges face the camera and show a cliff (_front).
 ##
-## Everything is drawn in code from the RealmMap (no tile sprites yet; docs/ART_AND_AUDIO_PROMPTS.md
+## Everything is drawn in code from the RealmMap (no tile sprites yet; docs/art_prompts/
 ## lists the art that will replace the flat colours). Shows what it was last told (refresh()), not
 ## the live MatchState, so the game screen decides when a battle's outcome appears.
 ##
@@ -15,8 +18,9 @@ signal territory_clicked(territory: int)
 signal cancelled
 signal hovered(territory: int)
 
-const TW2 := 16.0  ## half the width of a cell's diamond (world units)
+const TW2 := 16.0  ## half the width of a square cell's diamond (world units)
 const TH2 := 8.0  ## half its height
+const HEX_R := 13.0  ## a hex cell's corner radius (about the same area as a diamond)
 const LIFT := 5.0  ## height of one elevation step
 const BASE := 14.0  ## thickness of the island below the lowest land
 const DIE := 16.0  ## width of one die on the map
@@ -39,6 +43,11 @@ var arrow: Vector2i = Vector2i(-1, -1)  ## an attack being fought: from, to
 var interactive: bool = true
 
 var _order: Array[Vector2i] = []  ## cells in drawing order (back to front)
+var _shape: PackedVector2Array = PackedVector2Array()  ## a cell's top outline around its centre
+## For edge i (corner i to corner i+1): the index in RealmMap.cell_neighbors() of the cell across it.
+var _edge_dir: Array[int] = []
+## The edges facing the camera, drawn as cliffs: [corner a, corner b, shade 0..1].
+var _front: Array = []
 var _jitter: Dictionary = {}  ## cell -> brightness variation
 var _bounds: Rect2
 var _zoom: float = 1.0
@@ -73,14 +82,20 @@ func setup(match_state: MatchState, realm_terrain: Dictionary) -> void:
 			if realm.territory_at(c) >= 0:
 				_order.append(c)
 				_jitter[c] = rng.randf_range(-0.045, 0.045)
+	_build_shape()
 	_order.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-		return a.x + a.y < b.x + b.y or (a.x + a.y == b.x + b.y and a.x < b.x))
+		var pa := _cell_center(a)
+		var pb := _cell_center(b)
+		return pa.y < pb.y or (pa.y == pb.y and pa.x < pb.x))
+	var half := Vector2.ZERO
+	for v in _shape:
+		half = Vector2(maxf(half.x, absf(v.x)), maxf(half.y, absf(v.y)))
 	var lo := Vector2(INF, INF)
 	var hi := Vector2(-INF, -INF)
 	for c in _order:
 		var p := _cell_center(c)
-		lo = Vector2(minf(lo.x, p.x - TW2), minf(lo.y, p.y - TH2 - LIFT * 2.0 - DIE * 3.0))
-		hi = Vector2(maxf(hi.x, p.x + TW2), maxf(hi.y, p.y + TH2 + BASE + 6.0))
+		lo = Vector2(minf(lo.x, p.x - half.x), minf(lo.y, p.y - half.y - LIFT * 2.0 - DIE * 3.0))
+		hi = Vector2(maxf(hi.x, p.x + half.x), maxf(hi.y, p.y + half.y + BASE + 6.0))
 	_bounds = Rect2(lo, hi - lo)
 	refresh()
 	resized.connect(_update_transform)
@@ -103,7 +118,25 @@ func reset_view() -> void:
 # --- Geometry -----------------------------------------------------------------------------------
 
 func _cell_center(c: Vector2i) -> Vector2:
+	if realm.grid == RealmMap.GRID_HEX:
+		return Vector2(c.x * 1.5 * HEX_R, (c.y + 0.5 * (c.x & 1)) * sqrt(3.0) * HEX_R * RealmMap.HEX_SQUASH)
 	return Vector2((c.x - c.y) * TW2, (c.x + c.y) * TH2)
+
+
+func _build_shape() -> void:
+	if realm.grid == RealmMap.GRID_HEX:
+		# Flat-topped: corner 0 on the right, then clockwise on screen (y points down).
+		var h := sqrt(3.0) / 2.0 * HEX_R * RealmMap.HEX_SQUASH
+		_shape = PackedVector2Array([Vector2(HEX_R, 0.0), Vector2(HEX_R / 2.0, h), Vector2(-HEX_R / 2.0, h),
+			Vector2(-HEX_R, 0.0), Vector2(-HEX_R / 2.0, -h), Vector2(HEX_R / 2.0, -h)])
+		# edges: lower right, down, lower left, upper left, up, upper right (see RealmMap.HEX_DIRS_*)
+		_edge_dir = [0, 5, 4, 3, 2, 1]
+		_front = [[2, 3, 0.88], [1, 2, 0.74], [0, 1, 0.6]]
+	else:
+		_shape = PackedVector2Array([Vector2(0.0, -TH2), Vector2(TW2, 0.0), Vector2(0.0, TH2), Vector2(-TW2, 0.0)])
+		# edges: N-E borders (0,-1), E-S (1,0), S-W (0,1), W-N (-1,0) (see RealmMap.DIRS)
+		_edge_dir = [3, 0, 2, 1]
+		_front = [[3, 2, 0.88], [2, 1, 0.68]]
 
 
 func _lift(t: int) -> float:
@@ -156,8 +189,7 @@ func territory_at_screen(p: Vector2) -> int:
 	for i in range(_order.size() - 1, -1, -1):
 		var c := _order[i]
 		var t := realm.territory_at(c)
-		var d := w - (_cell_center(c) - Vector2(0.0, _lift(t)))
-		if absf(d.x) / TW2 + absf(d.y) / TH2 <= 1.0:
+		if Geometry2D.is_point_in_polygon(w - (_cell_center(c) - Vector2(0.0, _lift(t))), _shape):
 			return t
 	return -1
 
@@ -278,50 +310,56 @@ func _draw() -> void:
 	draw_set_transform_matrix(_xf)
 	var cliff: Color = terrain["cliff"]
 	var shadow := Color(0, 0, 0, 0.28)
+	var n_corners := _shape.size()
+	var shadow_shape := PackedVector2Array()
+	for v in _shape:
+		shadow_shape.append(v * 1.08 + Vector2(4.0, BASE + 10.0))
 	for c in _order:  # the island's shadow on the sea below
-		var p := _cell_center(c) + Vector2(4.0, BASE + 10.0)
-		draw_colored_polygon(_diamond(p, 1.08), shadow)
+		draw_colored_polygon(_offset(shadow_shape, _cell_center(c)), shadow)
+	var dark := cliff.darkened(0.45)
 	for c in _order:
 		var t := realm.territory_at(c)
 		var lift := _lift(t)
 		var center := _cell_center(c) - Vector2(0.0, lift)
-		var n := center + Vector2(0.0, -TH2)
-		var e := center + Vector2(TW2, 0.0)
-		var s := center + Vector2(0.0, TH2)
-		var w := center + Vector2(-TW2, 0.0)
+		var top_pts := _offset(_shape, center)
 		var depth := Vector2(0.0, lift + BASE)
-		var dark := cliff.darkened(0.45)
-		var left_top := cliff.darkened(0.12)
-		var right_top := cliff.darkened(0.32)
-		draw_polygon(PackedVector2Array([w, s, s + depth, w + depth]),
-			PackedColorArray([left_top, left_top, dark, dark]))
-		draw_polygon(PackedVector2Array([s, e, e + depth, s + depth]),
-			PackedColorArray([right_top, right_top, dark.darkened(0.2), dark.darkened(0.2)]))
+		for face in _front:
+			var a: Vector2 = top_pts[face[0]]
+			var b: Vector2 = top_pts[face[1]]
+			var k: float = face[2]
+			var upper := cliff.darkened(1.0 - k)
+			var lower := dark.darkened((1.0 - k) * 0.6)
+			draw_polygon(PackedVector2Array([a, b, b + depth, a + depth]),
+				PackedColorArray([upper, upper, lower, lower]))
 		var top := _top_color(t)
 		var j: float = _jitter[c]
-		top = Color(top.r + j, top.g + j, top.b + j, 1.0)
-		draw_colored_polygon(PackedVector2Array([n, e, s, w]), top)
+		draw_colored_polygon(top_pts, Color(top.r + j, top.g + j, top.b + j, 1.0))
 		# Edges: a dark line between territories, a light rim along the coast, gold around the selection.
-		var edges := [[n, e, Vector2i(0, -1)], [e, s, Vector2i(1, 0)], [s, w, Vector2i(0, 1)], [w, n, Vector2i(-1, 0)]]
-		for edge in edges:
-			var other := realm.territory_at(c + edge[2])
+		var around := realm.cell_neighbors(c)
+		for i in n_corners:
+			var other := realm.territory_at(around[_edge_dir[i]])
 			if other == t:
 				continue
+			var a: Vector2 = top_pts[i]
+			var b: Vector2 = top_pts[(i + 1) % n_corners]
 			if t == selected or (other == selected and other >= 0):
-				draw_line(edge[0], edge[1], Color(1.0, 0.86, 0.4), 2.2, true)
+				draw_line(a, b, Color(1.0, 0.86, 0.4), 2.2, true)
 			elif other < 0:
-				draw_line(edge[0], edge[1], Color(1, 1, 1, 0.35), 1.0, true)
+				draw_line(a, b, Color(1, 1, 1, 0.35), 1.0, true)
 			else:
-				draw_line(edge[0], edge[1], Color(0.08, 0.06, 0.05, 0.75), 1.3, true)
+				draw_line(a, b, Color(0.08, 0.06, 0.05, 0.75), 1.3, true)
 	_draw_arrow()
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 	_draw_stacks()
 	_draw_floaters()
 
 
-func _diamond(center: Vector2, k: float = 1.0) -> PackedVector2Array:
-	return PackedVector2Array([center + Vector2(0.0, -TH2 * k), center + Vector2(TW2 * k, 0.0),
-		center + Vector2(0.0, TH2 * k), center + Vector2(-TW2 * k, 0.0)])
+static func _offset(points: PackedVector2Array, by: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	out.resize(points.size())
+	for i in points.size():
+		out[i] = points[i] + by
+	return out
 
 
 func _draw_arrow() -> void:

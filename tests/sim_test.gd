@@ -23,8 +23,9 @@ func _init() -> void:
 		var sizes := ["small", "medium", "large"]
 		var size: String = sizes[i % 3]
 		var players := 2 + i % 7
-		var realm := MapGenerator.generate(rng.randi(), MapGenerator.SIZES[size], [1.6, 0.8, 1.2][i % 3])
-		if not _check_map(realm):
+		var grid := RealmMap.GRID_HEX if i % 2 == 1 else RealmMap.GRID_SQUARE
+		var realm := MapGenerator.generate(rng.randi(), MapGenerator.SIZES[size], [1.6, 0.8, 1.2][i % 3], grid)
+		if not _check_map(realm, MapGenerator.SIZES[size]):
 			failures += 1
 			continue
 		var defs: Array = []
@@ -81,7 +82,10 @@ func _init() -> void:
 	quit(1 if failures > 0 else 0)
 
 
-func _check_map(m: RealmMap) -> bool:
+func _check_map(m: RealmMap, expected: int) -> bool:
+	if m.count() != expected:
+		print("%s map has %d territories, expected %d" % [m.grid, m.count(), expected])
+		return false
 	for t in m.territories:
 		if t.cells.is_empty() or t.neighbors.is_empty():
 			print("territory %d has no cells or no neighbours" % t.id)

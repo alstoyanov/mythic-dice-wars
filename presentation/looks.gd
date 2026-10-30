@@ -12,6 +12,7 @@ const TERRAIN := {
 	"chinese": {"top": Color("b6cba3"), "cliff": Color("6e5c4a"), "sea": Color("1f4a4a")},
 	"mayan": {"top": Color("93b56c"), "cliff": Color("735e44"), "sea": Color("1b4a3c")},
 	"mesopotamian": {"top": Color("ddb688"), "cliff": Color("94654a"), "sea": Color("23485a")},
+	"yoruba": {"top": Color("d3b37e"), "cliff": Color("8e4a2e"), "sea": Color("1d4638")},  # savanna on red laterite
 }
 
 ## The players' colours (seat order).

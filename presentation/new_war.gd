@@ -21,7 +21,7 @@ func _ready() -> void:
 	grid.add_theme_constant_override("v_separation", 10)
 	col.add_child(grid)
 	Ui.on_resize(grid, func() -> void:
-		grid.custom_minimum_size.x = minf(3 * 150 + 20, Ui.panel_content_width()))
+		grid.custom_minimum_size.x = minf(4 * 150 + 10, Ui.panel_content_width()))
 	var group := ButtonGroup.new()
 	for p in GodCatalog.PANTHEONS:
 		grid.add_child(_pantheon_button(p, group))
@@ -37,6 +37,8 @@ func _ready() -> void:
 	_option(options, "Realm size", sizes.map(func(k: String) -> String:
 			return "%s (%d territories)" % [k.capitalize(), MapGenerator.SIZES[k]]),
 		sizes.find(GameSettings.map_size), func(i: int) -> void: GameSettings.map_size = sizes[i])
+	_option(options, "Board", ["Isometric squares", "Hexagons"], 1 if GameSettings.grid == RealmMap.GRID_HEX else 0,
+		func(i: int) -> void: GameSettings.grid = RealmMap.GRID_HEX if i == 1 else RealmMap.GRID_SQUARE)
 	_option(options, "Rivals", Array(AiPlayer.LEVEL_NAMES), GameSettings.ai_level,
 		func(i: int) -> void: GameSettings.ai_level = i)
 	_option(options, "Secondary god", ["Wakes after %d conquests" % MatchState.AWAKEN_CONQUESTS, "Awake from the start"],
