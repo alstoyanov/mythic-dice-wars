@@ -5,6 +5,11 @@ extends RefCounted
 ##
 ## Levels: 0 Novice (takes any fair-looking fight, sometimes stops early), 1 Warlord (good odds, joins
 ## its regions), 2 Strategist (also weighs the counter-attack and guards its largest region).
+##
+## Fog of war (MatchState.fog): a computer player reads only what it can see, its own territories
+## and their neighbours, like the human. Its attacks and miracles only ever involve those; for a
+## territory further away (the Strategist's look past a conquest) it assumes the average stack it
+## can see (_seen_dice). The territory counts in the player list are public, as for the human.
 
 const LEVEL_NAMES := ["Novice", "Warlord", "Strategist"]
 const MIN_CHANCE := [0.5, 0.57, 0.6]
@@ -20,6 +25,7 @@ static func choose_attack(state: MatchState, rng: RandomNumberGenerator) -> Arra
 	for t in state.largest_region_cells(p):
 		main_region[t] = true
 	var leader := _leader(state, p)
+	var guess := _unseen_guess(state, p)
 	var best: Array = []
 	var best_score := -INF
 	for from in state.territories_of(p):
@@ -41,7 +47,7 @@ static func choose_attack(state: MatchState, rng: RandomNumberGenerator) -> Arra
 				if state.dice[to] == 1:
 					score += 0.03
 			if level >= 2:
-				score -= _exposure(state, p, from, to) * 0.25
+				score -= _exposure(state, p, from, to, guess) * 0.25
 				# Do not strip the main region's only big defender of a border.
 				if main_region.has(from) and _threat(state, p, from) > 0 and state.dice[from] < state.max_dice(p):
 					score -= 0.05
@@ -142,6 +148,22 @@ static func _joins_region(state: MatchState, p: int, to: int, main_region: Dicti
 	return touches_main and touches_other
 
 
+## The dice of territory `t` as player `p` knows them: the real count if `p` can see it, else `guess`.
+static func _seen_dice(state: MatchState, p: int, t: int, guess: float) -> float:
+	return float(state.dice[t]) if state.can_see(p, t) else guess
+
+
+## Under fog: the average enemy stack that player `p` can see (3 if none), its guess for the rest.
+static func _unseen_guess(state: MatchState, p: int) -> float:
+	var total := 0
+	var n := 0
+	for t in state.owners.size():
+		if state.owners[t] != p and state.can_see(p, t):
+			total += state.dice[t]
+			n += 1
+	return float(total) / n if n > 0 else 3.0
+
+
 ## How many more dice than ours the strongest enemy next to territory `t` has (0 if none).
 static func _threat(state: MatchState, p: int, t: int) -> int:
 	var worst := 0
@@ -152,11 +174,12 @@ static func _threat(state: MatchState, p: int, t: int) -> int:
 
 
 ## 0..1: how exposed the conquered territory (with dice-1 dice) and the emptied source would be.
-static func _exposure(state: MatchState, p: int, from: int, to: int) -> float:
+## The conquered territory's other neighbours may lie in the fog: `guess` stands in for their dice.
+static func _exposure(state: MatchState, p: int, from: int, to: int, guess: float) -> float:
 	var moved := state.dice[from] - 1
 	var danger := 0
 	for nb in state.map.neighbors(to):
-		if state.owners[nb] != p and nb != to and state.dice[nb] > moved:
+		if state.owners[nb] != p and nb != to and _seen_dice(state, p, nb, guess) > moved:
 			danger += 1
 	for nb in state.map.neighbors(from):
 		if state.owners[nb] != p and nb != to and state.dice[nb] >= 3:

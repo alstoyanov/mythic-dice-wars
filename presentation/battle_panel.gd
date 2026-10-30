@@ -343,8 +343,10 @@ func _build_arena(arena: Control, art: Dictionary, count: int, skin: String, k: 
 	arena.size = area
 	var tower: Texture2D = art["tower"]
 	var tray: Texture2D = art["tray"]
+	var layout: Dictionary = art.get("layout", Looks.TOWER_LAYOUT)  # how this tower's pieces fit together
+	var tray_w: float = TRAY_W * float(layout["tray_width"])
 	var tower_size := Vector2(TOWER_H * tower.get_width() / float(tower.get_height()), TOWER_H) * k
-	var tray_size := Vector2(TRAY_W, TRAY_W * tray.get_height() / float(tray.get_width())) * k
+	var tray_size := Vector2(tray_w, tray_w * tray.get_height() / float(tray.get_width())) * k
 	var tray_pos := Vector2((area.x - tray_size.x) / 2.0, area.y - tray_size.y)
 	_picture(arena, tower, Rect2(Vector2((area.x - tower_size.x) / 2.0, 0.0), tower_size))
 	_picture(arena, tray, Rect2(tray_pos, tray_size))
@@ -357,8 +359,8 @@ func _build_arena(arena: Control, art: Dictionary, count: int, skin: String, k: 
 		_picture(arena, front, Rect2(Vector2(tray_pos.x, area.y - front_size.y), front_size))
 	# Places in the tray: one row for up to five dice; more go in two staggered rows (the back row a
 	# little smaller and higher). The dice are as big as the spacing allows.
-	var centre := tray_pos + Vector2(tray_size.x / 2.0, tray_size.y * 0.42)
-	var reach := tray_size.x * 0.33
+	var centre := tray_pos + Vector2(tray_size.x / 2.0, tray_size.y * float(layout["floor"]))
+	var reach := tray_size.x * float(layout["reach"])
 	var two_rows := count > 5
 	var back := ceili(count / 2.0) if two_rows else count
 	var front := count - back

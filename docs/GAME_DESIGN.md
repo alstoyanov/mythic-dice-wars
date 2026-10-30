@@ -112,6 +112,11 @@ The core mechanic belongs to a well-loved genre: territory dice battles, with ri
 - 2–8 players. **Turn order is shuffled.**
 - Territories are dealt evenly at random. Every territory starts with 1 die.
 - Each player then gets the same dice budget: ⌈territories ÷ players⌉ × 3 in total, scattered at random over their own land (at most 8 per territory).
+- **Head start** (war option *Turn order: Balanced*, the default). Moving first is a large edge, so every later player gets extra dice before the first turn:
+
+  head start of the player moving k-th of n = round(0.66 × (k − 1) ÷ (n − 1) × their reinforcement)
+
+  "Their reinforcement" is what they would get for ending a turn right then (their largest region plus god bonuses, §4.4). The dice are placed exactly like reinforcements (border-first for the gods that do that), and what does not fit goes to the reserve. The first player gets none; the last gets about two thirds of one turn's dice. With 4 players the shares are 0, 22%, 44% and 66%. *Classic* turns it off. Why and how it was tuned: §12.4.
 
 ### 4.3 Attacking [POC]
 1. Choose one of your territories with **at least 2 dice**, then a **neighbouring enemy** territory.
@@ -158,6 +163,7 @@ The core mechanic belongs to a well-loved genre: territory dice battles, with ri
 | Favour cap | 12 | `MatchState.FAVOR_CAP` |
 | Conquests to wake the secondary god | 4 | `MatchState.AWAKEN_CONQUESTS` |
 | Average starting dice per territory | 3 | `MatchState.START_DICE_PER_TERRITORY` |
+| Head start of the last player (share of one reinforcement) | 0.66 | `MatchState.HEAD_START_SHARE` |
 | Cells per territory | 22 | `MapGenerator.CELLS_PER_TERRITORY` |
 
 ### 4.7 War options
@@ -169,11 +175,27 @@ The core mechanic belongs to a well-loved genre: territory dice battles, with ri
 | Board | Isometric squares / Hexagons | [POC] |
 | Rivals' skill | Novice / Warlord / Strategist | [POC] |
 | Secondary god | Wakes after 4 conquests / Awake from the start | [POC] |
+| Turn order | Balanced (head start for later players, §4.2) / Classic | [POC] |
 | Seat setup | each seat: Human (hotseat) / Computer / Closed | [MVP] |
 | Teams | free-for-all / 2v2 / 2v2v2 / 4v4 | [LATER] |
-| Fog of war | off / stacks of non-neighbours hidden | [LATER] |
+| Fog of war | Off / On (see only your land and its neighbours, §4.8) | [POC] |
 | Turn timer | off / 30 s / 60 s | [LATER] (online) |
 | Seed | random / typed (shareable map codes) | [MVP] |
+
+### 4.8 Fog of war [POC]
+A war option, **off by default**. It makes wars less predictable: you plan from what your borders tell you, not from a full view of the board.
+
+- **What a player sees** (`MatchState.can_see(p, t)`): their own territories and every territory next to one of them, with owner and dice. Everything else is hidden. The map outline, territory borders and elevation stay visible, so you know the shape of the realm but not who holds it. A fallen player sees everything.
+- **The fog moves with the front:** conquering a territory reveals its neighbours; losing one may hide its surroundings again.
+- **What stays public:** how many lands each player holds (the player list and the leader's crown), every player's gods and favour, and awakening and elimination banners.
+- **What is hidden:** for other players, their dice total, reinforcements, reserve and head start in the player list. On the map, hidden territories have no colour, dice, pennant or effects.
+- **Battles:** shown only if the player sees the attacking or the defending territory. Battles fought entirely in the fog are not shown at all (no arrow, no sound).
+- **Miracles** can only target a territory the caster can see.
+- **The computer players are bound by the same rule.** Attacks always go to neighbours (visible by definition). Smite considers only enemy territories touching its land. Bless and ward only consider its own. The one place an AI looks further is the Strategist's exposure check (enemy stacks next to a territory it is about to conquer). There, unseen territories are assumed to hold the average enemy stack it can see (`AiPlayer._seen_dice`). Territory counts (for "attack the leader") are public, as for the human.
+- **Test:** `sim_test.gd` plays a quarter of its wars under fog. A blindness check scrambles the dice on every territory the current AI cannot see and requires its next attack and miracle to stay exactly the same (about 2,000 decisions per run).
+- **Drawing:** hidden territories are drawn in a mist grey mixed into the realm's ground colour, slowly brightening and darkening in drifting bands.
+
+**Later:** remember the last seen state of a territory ("last seen: 4 dice, round 6") instead of hiding it completely; scouting gods (for example Heimdall or Horus) who see further.
 
 ---
 
@@ -368,7 +390,7 @@ Yoruba became playable as soon as its dice arrived (the portraits and theme alre
 | **Warlord** | Needs ≥ 57%. Prefers attacks that **join its regions** (bigger reinforcements), hits the leader, picks off 1-die stacks. |
 | **Strategist** | Needs ≥ 60%. Also weighs **exposure** (how many strong enemy stacks would border the conquered land and the emptied source), and keeps big stacks on the borders of its main region. |
 
-All levels read the real odds with every god's effect included (`DiceOdds.attack_chance`). They use full stacks before they would waste reinforcements, and cast miracles with simple targeting: smite the strongest enemy stack touching their land, bless or ward their most threatened border.
+All levels read the real odds with every god's effect included (`DiceOdds.attack_chance`). Under fog of war they use only what they can see (§4.8). They use full stacks before they would waste reinforcements, and cast miracles with simple targeting: smite the strongest enemy stack touching their land, bless or ward their most threatened border.
 
 **Anti-stall:** if a computer player finds no good attack, but its stacks are 85% full or the war has passed round 60, it takes its best fight above 30%. After round 80 it takes any fight. Without this, about 4% of AI-only wars between defensive gods never ended.
 
@@ -412,7 +434,7 @@ A **hand-painted diorama**: a floating island of raised land, seen from a fixed 
 - Zoom (wheel, pinch, trackpad) and pan (drag) make a detailed view available on every screen.
 
 **Battles [POC].**
-- **Over the whole screen.** The map dims, the attacker slides in from the left and the defender from the right (on a tall screen from the top and the bottom), each with their pantheon's **dice tower** (a pantheon without its own tower yet borrows the Greek one), and "VS" pops in between. Tower and tray are scaled to the room; the dice are as big as the tray allows: about 100 px for up to three dice on a laptop screen, one row up to five, two staggered rows for more. The dice tumble out of the tower's arch into the tray (0.8 s at normal speed; battle speed 1×, 2× or 6×, computer turns at least 2×) and settle. **Both rolls stay in view**: the losing side's dice are not hidden or destroyed. Then everything fades back to the map, where the outcome plays (dust, a flash, "+N" / "−N"). An arc arrow on the map links attacker and defender.
+- **Over the whole screen.** The map dims, the attacker slides in from the left and the defender from the right (on a tall screen from the top and the bottom), each with their pantheon's **dice tower** (all 7 pantheons have their own; a new pantheon borrows another's until its art exists), and "VS" pops in between. Tower and tray are scaled to the room. The pieces of each tower fit together by a small layout (`assets/towers/<pantheon>/layout.json`, written by the asset tool): where the dice row sits on the tray floor, how wide it spreads, the tray's size, and whether the tray front is drawn over the dice (left out where it does not match the tray's shape; for a tray painted straight on, the front can be cut from the tray picture itself, so it fits exactly); the dice are as big as the tray allows: about 100 px for up to three dice on a laptop screen, one row up to five, two staggered rows for more. The dice tumble out of the tower's arch into the tray (0.8 s at normal speed; battle speed 1×, 2× or 6×, computer turns at least 2×) and settle. **Both rolls stay in view**: the losing side's dice are not hidden or destroyed. Then everything fades back to the map, where the outcome plays (dust, a flash, "+N" / "−N"). An arc arrow on the map links attacker and defender.
 - **How the gods changed the roll.** Under each tray the total is taken apart: the sum of the dice, then every bonus or penalty with the god and power behind it ("+2 Ares · Bloodlust", "−1 Ares · Reckless", "+5 Guanyin · Mercy (ward)", "+4 Thor · Opening Thunder (first attack)"), then what the gods did to the dice themselves ("Ra · Sun's Glare: no 1s", "Odin · Wisdom of the Runes: 1s rolled again"). A die whose 1 was rolled again has a gold frame and a small "1→". Below the verdict: how a tie was decided and what the gods did after the battle ("Guan Yu · Loyal Blade: +1 die on the conquered land", "Frigg · Hearth and Home: +1 die for holding", "Sekhmet · Unquenchable Wrath: another territory loses 2"). The same bonuses are listed in the status bar when hovering a target, before attacking.
 - **How long the result stays (Settings, "Battle result shown"):** Brief 0.8 s, Normal 1.8 s, Long 3.5 s, or **Until I press Continue** (also a click on the map, Enter or Space). It applies to battles the player fights in. Battles between computer players are shown only on the map (the arrow, then the outcome) unless "Show battles between rivals too" is on.
 - On the map after a battle: a conquered territory flashes gold and the new owner's colour washes across it from the attacker's side. Dust puffs on the stack that was reduced to 1.
@@ -446,7 +468,7 @@ The menus follow **Chasm of Knights**: everything is built in code with the shar
 ### 9.1 Screen flow
 
 ```
-Boot → Splash (realm painting + title, tap to skip)
+Boot → Splash (key art + title, tap to skip)
   → Main Menu
        ├─ New War ─► Pantheon & options ─► Choose your gods ─► War ─► Result ─► (New war | Main menu)
        ├─ Quick War ─────────────────────────────────────────► War   (last choices)
@@ -461,9 +483,9 @@ Boot → Splash (realm painting + title, tap to skip)
 
 | Screen | Content | Status |
 |---|---|---|
-| **Splash** | Realm painting, title in the realm font, subtitle. 2.2 s, or click to skip. | [POC] |
+| **Splash** | The key art over the whole screen (the wide picture, or the tall one on a screen held upright), drifting slowly closer; the title and subtitle fade in over the sky at the top, on a soft shadow. 3 s, or click to skip. Without the key art: the realm painting. | [POC] |
 | **Main menu** | Title, current pantheon and gods, New War, Quick War, icon row (Settings, Help, Credits, Quit). | [POC] |
-| **New War** | 6 pantheon tiles (die face + name, framed when chosen; picking one re-themes the screen), Players, Realm size, Rivals, Secondary god timing. ◀ / ▶. | [POC] |
+| **New War** | 6 pantheon tiles (die face + name, framed when chosen; picking one re-themes the screen), Players, Realm size, Board, Rivals, Secondary god timing, Turn order, Fog of war. ◀ / ▶. | [POC] |
 | **Choose your gods** | Two rows of god cards (portrait, epithet, boon, bane), the awakening note. ◀ / ▶ Start. | [POC] |
 | **War** | §9.3 | [POC] |
 | **Result** | Banner + confetti/ash over the map; New war / Main menu. [MVP] adds stats: rounds, conquests, biggest roll, luck meter (rolled vs expected), a "war chronicle" timeline. | [POC] basic |
@@ -569,6 +591,26 @@ Primary ≈ 1 point. Secondary boon ≈ 2 points, bane ≈ −1 point. Banes mus
 2. **Pass 1:** conquest bonus limited to the first conquest per turn, weak gods buffed, AI anti-stall added. The conquest gods were fixed, but halved reinforcements became too harsh (Hades 0.03, Hou Yi 0.06) and the "defend reward" gods ran hot.
 3. **Pass 2 (current):** all 600 wars finished, the range is **0.52–1.67**, and pantheons won 80–115 wars each (fair share 100). Hot: Isis, Ereshkigal, Hel, Guan Yu, Hou Yi. Cold: Guanyin, Ptah, Ah Puch, Hades, Itzamna, Nezha, Zeus. Next step: a 2,000-war run per change, the Strategist level only, and human playtests of the miracle gods (the AI uses miracles crudely).
 
+### 12.4 Turn order and the head start
+With the classic setup (equal dice for everyone) the **first player wins far too often**. The first attacks hit a board where nobody has reinforced yet. They break up the rivals' regions, so the rivals get fewer reinforcements, and that lead keeps growing. AI vs AI, Warlords, medium realm, 150–300 wars per row (win % by place in the turn order):
+
+| Rule tried | 2 players | 4 players |
+|---|---|---|
+| Classic (no compensation) | **82** / 18 | **36** / 29 / 19 / 16 |
+| Fixed extra dice: +2 per place | 78 / 22 | 19 / 19 / 27 / 35 |
+| Fixed extra dice: +4 per place | 66 / 34 | 9 / 12 / 20 / **59** |
+| First round: 1 attack each, or k attacks for the k-th player | 81–85 / 15–19 | 35–37 / … / 16–21 |
+| The first player only reinforces on turn 1 | 61 / 39 | 28 / 26 / 22 / 24 |
+| Everyone reinforces together at the end of each round | 18 / **82** (the last player wins instead) | 1 / 2 / 8 / **88** |
+| … with the starting player rotating each round | 40 / 60 | 24 / 10 / 11 / 55 |
+| … with a random order each round | 50 / 50, but whoever is last in round 1 wins 72% | 19 / 24 / 27 / 30, last in round 1 wins 62% |
+| Head start, a full reinforcement for the last player | 36 / 64 | 23 / 23 / 25 / 29 |
+| **Head start, 0.66 of a reinforcement (current)** | **55 / 45** (500 wars) | **23 / 28 / 23 / 26** (500 wars) |
+
+Fixed dice cannot work for every player count: two players need many, eight need few. A share of **one reinforcement** scales with the map and the number of players by itself. Reinforcing at the end of the round moves the edge to the last player: the territories that player attacked from are refilled at once, while everyone else's stay weak for the rest of the round. `tests/sim_test.gd` checks the turn order on every run (§13.5).
+
+**Later:** a share per player count if human playtests show the first player is still ahead; a placement draft (players place their starting dice themselves, last player first) as an advanced option.
+
 ---
 
 ## 13. Technical design
@@ -615,8 +657,8 @@ Save = `{seed, options, player defs, actions: [["attack", from, to], ["miracle",
 Copy Chasm of Knights' `export_guard` editor plugin and presets: Windows, Web (slim), Android (dev / full / basic editions). Use the Compatibility renderer everywhere.
 
 ### 13.5 Testing
-- `tests/sim_test.gd`: invariants and balance (headless, CI-friendly; ~80 s for 600 wars).
-- `tests/screenshots.tscn`: opens every screen, plays a human attack, and saves PNGs at any size (`--size=540x960`, `--pantheon=norse`). It is a smoke test for script errors, and it gives screenshots for the store page.
+- `tests/sim_test.gd`: invariants and balance (headless, CI-friendly; ~80 s for 600 wars). A quarter of the wars are played under fog of war, and the **fog blindness check** (§4.8) runs first. It ends with the **turn-order check**: 100 wars each of 2 and 4 Warlords with the head start, wins printed by place in the turn order, and a failure if the first of two players wins outside 35–65% (`--seats=N` changes the count, `--seats=0` skips it).
+- `tests/screenshots.tscn`: opens every screen, plays a human attack, and saves PNGs at any size (`--size=540x960`, `--pantheon=norse`, `--grid=hex`, `--fog=on`). It is a smoke test for script errors, and it gives screenshots for the store page.
 - [MVP] unit tests for `DiceOdds` (against brute force) and `MapGenerator` (connectivity, sizes, determinism).
 
 ---
@@ -650,7 +692,7 @@ godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=540x960] [
 | Milestone | Content | Estimate |
 |---|---|---|
 | **M0 — POC** ✔ | This build. | done |
-| **M1 — Vertical slice** | Dice towers for all pantheons, music and SFX for 2 realms, pause / save / resume, hotseat, seat setup, mobile player strip, colour-blind emblems. | 4–6 weeks |
+| **M1 — Vertical slice** | Music and SFX for 2 realms, a logo, pause / save / resume, hotseat, seat setup, mobile player strip, colour-blind emblems. | 4–6 weeks |
 | **M2 — Content complete (launch set)** | 7 pantheons × 12 gods, balance at 2,000-war sims + playtests, Daily Omen, localisation (EN + 3), exports (Win, Web, Android). | 8–10 weeks |
 | **M3 — Launch** | Store pages, trailer (from the screenshot test), analytics (opt-in), crash reporting. | 2 weeks |
 | **M4 — Campaign** | Eras of Myth for Greek and Norse, boss gods, unlocks. | 6–8 weeks |
@@ -678,6 +720,8 @@ godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=540x960] [
 | Stack / tower | the dice on a territory |
 | Region | a group of connected territories of one player. The largest one decides reinforcements |
 | Reserve | dice that did not fit, kept for the next turn (max 30) |
+| Head start | extra dice for the players who move later, given before the first turn (§4.2) |
+| Fog of war | the option where a player sees only their own territories and their neighbours (§4.8) |
 | Boon / bane | a god's advantage / drawback, as effect keys (§5.2) |
 | Awakening | the moment a secondary god becomes active |
 | Favour | the currency of miracles, gained by fighting and by losing land |

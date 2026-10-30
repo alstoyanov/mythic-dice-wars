@@ -1,6 +1,6 @@
 extends Node
 ## Opens every screen and saves a picture of each (needs a window, not --headless):
-##   godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=1280x800] [--pantheon=norse] [--grid=hex]
+##   godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=1280x800] [--pantheon=norse] [--grid=hex] [--fog=on|off]
 ## Also a smoke test: a script error on any screen shows in the output.
 
 const SCREENS := ["splash", "main_menu", "new_war", "god_select", "settings", "help", "game_screen"]
@@ -30,6 +30,9 @@ func _run() -> void:
 		elif arg.begins_with("--grid="):
 			GameSettings.ensure_loaded()
 			GameSettings.grid = arg.get_slice("=", 1)
+		elif arg.begins_with("--fog="):
+			GameSettings.ensure_loaded()
+			GameSettings.fog = arg.get_slice("=", 1) == "on"
 		elif arg.begins_with("--pantheon="):
 			GameSettings.ensure_loaded()
 			GameSettings.set_pantheon(arg.get_slice("=", 1))

@@ -28,6 +28,8 @@ static var map_size: String = "medium"  ## see MapGenerator.SIZES
 static var grid: String = "square"  ## the board's cells: RealmMap.GRID_SQUARE or GRID_HEX
 static var ai_level: int = 1  ## see AiPlayer.LEVEL_NAMES
 static var awakening: String = "milestone"  ## when secondary gods wake: "milestone" or "start"
+static var head_start: bool = true  ## later players get a head start against the first-mover advantage
+static var fog: bool = false  ## fog of war: everyone sees only their own territories and their neighbours
 
 
 static func ensure_loaded() -> void:
@@ -58,6 +60,8 @@ static func ensure_loaded() -> void:
 		grid = RealmMap.GRID_SQUARE
 	ai_level = clampi(int(cfg.get_value("war", "ai_level", ai_level)), 0, AiPlayer.LEVEL_NAMES.size() - 1)
 	awakening = str(cfg.get_value("war", "awakening", awakening))
+	head_start = bool(cfg.get_value("war", "head_start", head_start))
+	fog = bool(cfg.get_value("war", "fog", fog))
 	_fix_gods()
 
 
@@ -105,4 +109,6 @@ static func save() -> void:
 	cfg.set_value("war", "grid", grid)
 	cfg.set_value("war", "ai_level", ai_level)
 	cfg.set_value("war", "awakening", awakening)
+	cfg.set_value("war", "head_start", head_start)
+	cfg.set_value("war", "fog", fog)
 	cfg.save(SETTINGS_PATH)

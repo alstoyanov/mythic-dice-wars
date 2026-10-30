@@ -27,6 +27,8 @@ func _ready() -> void:
 	rng.randomize()
 	_new_match()
 	_build_ui()
+	_view.viewer = human  # under fog of war the map and the player list show what the player sees
+	_players.viewer = human
 	_view.setup(state, Looks.current()["terrain"])
 	_update_hud()
 	_begin_turn.call_deferred()
@@ -51,7 +53,8 @@ func _new_match() -> void:
 		var sec := _pick_god(pan, GodCatalog.SECONDARY, used)
 		defs.append({"name": GodCatalog.god(prim)["name"], "pantheon": pan, "primary": prim, "secondary": sec,
 			"is_ai": true, "ai_level": GameSettings.ai_level})
-	state = MatchState.create(realm, defs, rng, GameSettings.awakening)
+	state = MatchState.create(realm, defs, rng, GameSettings.awakening, GameSettings.head_start)
+	state.fog = GameSettings.fog
 	for p in state.players:
 		if not p.is_ai:
 			human = p.index
@@ -131,8 +134,29 @@ func _begin_turn() -> void:
 		_run_ai_turn()
 	else:
 		var left := state.attacks_left(human)
-		_say("Your turn. Choose one of your territories with 2 or more dice, then a neighbour to attack."
+		_say(_head_start_note() + "Your turn. Choose one of your territories with 2 or more dice, then a neighbour to attack."
 			+ (" (%d attacks this turn.)" % left if left >= 0 else ""))
+
+
+## On the player's first turn: where they stand in the turn order and the head start that makes up for it.
+func _head_start_note() -> String:
+	if state.round_number != 1:
+		return ""
+	var n := state.players.size()
+	var given := 0
+	for p in state.players:
+		given += p.head_start
+	if given == 0:
+		return "You move %s of %d (classic order, no head start). " % [_ordinal(human + 1), n]
+	if human == 0:
+		return "You move first, so your rivals got a head start of extra dice. "
+	return "You move %s of %d, so you got a head start of %d dice. " % [_ordinal(human + 1), n, state.players[human].head_start]
+
+
+static func _ordinal(k: int) -> String:
+	if k % 100 in [11, 12, 13]:
+		return "%dth" % k
+	return "%d%s" % [k, {1: "st", 2: "nd", 3: "rd"}.get(k % 10, "th")]
 
 
 func _run_ai_turn() -> void:
@@ -161,12 +185,17 @@ func _run_ai_turn() -> void:
 
 
 func _attack(from: int, to: int, speed: float) -> void:
-	_view.selected = from
+	# Under fog of war a battle is shown only if the player sees at least one of the two territories.
+	var seen := _view.is_seen(from) or _view.is_seen(to)
+	if seen:
+		_view.selected = from if _view.is_seen(from) else -1
+		_view.arrow = Vector2i(from, to)
 	_view.targets.clear()
-	_view.arrow = Vector2i(from, to)
 	var result := state.attack(from, to, rng)
 	var involves_player: bool = result["attacker"] == human or result["defender"] == human
-	if involves_player or GameSettings.hold_rivals:
+	if not seen:  # a battle somewhere in the fog: nothing to show
+		pass
+	elif involves_player or GameSettings.hold_rivals:
 		await _battle.play(result, state, speed)
 		var hold := GameSettings.result_hold(involves_player)
 		if hold != GameSettings.WAIT and not involves_player:
@@ -180,7 +209,9 @@ func _attack(from: int, to: int, speed: float) -> void:
 	_view.arrow = Vector2i(-1, -1)
 	_view.selected = -1
 	_view.refresh()
-	if result["won"]:
+	if not seen:
+		pass
+	elif result["won"]:
 		Sound.play("conquer")
 		_view.play_fx("dust", to, 0.8 / speed, 60.0, 10.0)
 		_view.flash(to, Color(1.0, 0.9, 0.5), 0.7 / speed)
@@ -194,7 +225,7 @@ func _attack(from: int, to: int, speed: float) -> void:
 		_view.float_text(t, "-%d" % result["losses"][t], Color(1.0, 0.55, 0.5))
 		_view.play_fx("crumble", t, 0.6, 30.0, 12.0)
 	_update_hud()
-	if result["awakened"]:
+	if result["awakened"]:  # the gods are no secret, even in the fog
 		var a := state.players[result["attacker"]]
 		_view.play_fx("motes", to, 1.2, 80.0, 20.0)
 		await _show_banner("%s awakens for %s!" % [GodCatalog.god(a.secondary)["name"], a.name], speed)
@@ -232,7 +263,7 @@ func _finish_turn(speed: float) -> void:
 		_view.play_fx("crumble", t, 0.6, 30.0, 12.0)
 	for t in r["placed"]:
 		_view.float_text(t, "+%d" % r["placed"][t], Color(0.75, 1.0, 0.7), 1.0)
-	if not r["placed"].is_empty():
+	if not r["placed"].is_empty() and (r["player"] == human or not state.fog):
 		Sound.play("reinforce")
 	_view.refresh()
 	await get_tree().create_timer(0.6 / speed).timeout
@@ -366,7 +397,12 @@ func _cancel() -> void:
 
 
 func _on_hovered(t: int) -> void:
-	if not _human_turn() or t < 0 or _view.selected < 0 or _miracle != "":
+	if not _human_turn() or t < 0:
+		return
+	if not _view.is_seen(t):
+		_say("Hidden by the fog of war: you see only your own land and its neighbours.")
+		return
+	if _view.selected < 0 or _miracle != "":
 		return
 	if _view.targets.has(t):
 		var chance := DiceOdds.attack_chance(state, _view.selected, t)

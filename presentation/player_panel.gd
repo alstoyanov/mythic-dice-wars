@@ -1,12 +1,13 @@
 class_name PlayerPanel
 extends PanelContainer
 ## Beside the map: one row per player in turn order with their colour, gods, territories, dice, the
-## reinforcement they would get (largest region), reserve and favour. The player whose turn it is is
+## reinforcement they would get (largest region), reserve and favour (and in round 1 their head start). The player whose turn it is is
 ## framed; an eliminated player is dimmed. Hovering a god's portrait explains their powers.
 
 const PORTRAIT := 34.0
 
 var _list: VBoxContainer
+var viewer: int = -1  ## under fog of war, whose eyes: the other players' dice are not shown
 var _portraits: Dictionary = {}  ## god id -> Texture2D
 
 
@@ -77,10 +78,23 @@ func update(state: MatchState) -> void:
 		stats.add_theme_constant_override("separation", 4)
 		stats.modulate = Color(1, 1, 1, 0.9)
 		col.add_child(stats)
-		_stat(stats, "", "%d lands · %d dice" % [state.territories_of(p.index).size(), state.total_dice(p.index)], "")
-		_stat(stats, "reinforce", "+%d" % state.reinforcement_preview(p.index), "Reinforcements at the end of the turn")
-		_stat(stats, "reserve", str(p.reserve), "Reserve: dice waiting for room")
+		# Under fog of war the number of lands stays public; another player's dice do not.
+		var hidden := state.fog and viewer >= 0 and p.index != viewer
+		var fog_tip := "Hidden by the fog of war" if hidden else ""
+		_stat(stats, "", "%d lands · %s dice" % [state.territories_of(p.index).size(), "?" if hidden else str(state.total_dice(p.index))], fog_tip)
+		_stat(stats, "reinforce", "+?" if hidden else "+%d" % state.reinforcement_preview(p.index),
+			fog_tip if hidden else "Reinforcements at the end of the turn")
+		_stat(stats, "reserve", "?" if hidden else str(p.reserve), fog_tip if hidden else "Reserve: dice waiting for room")
 		_stat(stats, "favour", str(p.favor), "Favour: pays for miracles")
+		if state.round_number == 1 and p.head_start > 0 and not hidden:  # what made up for moving later
+			var note := Label.new()
+			note.text = "Head start +%d dice" % p.head_start
+			note.tooltip_text = "Moves %d of %d, so this player began with %d extra dice.
+The later in the turn order, the bigger the head start." % [p.index + 1, state.players.size(), p.head_start]
+			note.mouse_filter = Control.MOUSE_FILTER_PASS
+			note.add_theme_font_size_override("font_size", 12)
+			note.add_theme_color_override("font_color", accent)
+			col.add_child(note)
 
 
 func _portrait(god_id: String, awake: bool, state: MatchState, conquests: int = 0) -> Control:

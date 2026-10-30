@@ -2,7 +2,7 @@
 
     python tools/prepare_assets.py            # everything
     python tools/prepare_assets.py dice       # only the dice faces
-    python tools/prepare_assets.py generated  # only the generated art (terrain, props, towers, icons, effects)
+    python tools/prepare_assets.py generated  # only the generated art (dice towers, key art and app icon, HUD icons, effects)
     python tools/prepare_assets.py --preview  # also writes tools/_dice_preview.png (a contact sheet)
 
 Sources (outside the project):
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         prepare_themes()
     if "shared" in what:
         prepare_shared()
-    if "generated" in what:  # terrain, props, towers, icons, effects (see tools/generated_art.py)
+    if "generated" in what:  # towers, key art, icons, effects (see tools/generated_art.py)
         import generated_art
         generated_art.prepare(GODOT / "assets" / "images" / "dice-wars", ROOT / "assets")
     if "--preview" in sys.argv and faces:

@@ -8,7 +8,7 @@ var _pantheon_buttons: Dictionary = {}  ## pantheon id -> Button
 
 func _ready() -> void:
 	_backdrop = Ui.setup_screen(self)
-	var col := Ui.centered_column(self, 12)
+	var col := Ui.centered_column(self, 10)
 	Ui.title(col, "New War")
 
 	var heading := Label.new()
@@ -29,9 +29,9 @@ func _ready() -> void:
 	var options := GridContainer.new()
 	options.columns = 2
 	options.add_theme_constant_override("h_separation", 14)
-	options.add_theme_constant_override("v_separation", 8)
+	options.add_theme_constant_override("v_separation", 6)
 	col.add_child(options)
-	_option(options, "Players", range(2, 9).map(func(n: int) -> String: return "%d (you and %d rivals)" % [n, n - 1]),
+	_option(options, "Players", range(2, 9).map(func(n: int) -> String: return "%d (you and %d %s)" % [n, n - 1, "rival" if n == 2 else "rivals"]),
 		GameSettings.players - 2, func(i: int) -> void: GameSettings.players = i + 2)
 	var sizes: Array = MapGenerator.SIZES.keys()
 	_option(options, "Realm size", sizes.map(func(k: String) -> String:
@@ -44,6 +44,10 @@ func _ready() -> void:
 	_option(options, "Secondary god", ["Wakes after %d conquests" % MatchState.AWAKEN_CONQUESTS, "Awake from the start"],
 		0 if GameSettings.awakening == "milestone" else 1,
 		func(i: int) -> void: GameSettings.awakening = "milestone" if i == 0 else "start")
+	_option(options, "Turn order", ["Balanced (head start)", "Classic"],
+		0 if GameSettings.head_start else 1, func(i: int) -> void: GameSettings.head_start = i == 0)
+	_option(options, "Fog of war", ["Off", "On (see only next to your land)"],
+		1 if GameSettings.fog else 0, func(i: int) -> void: GameSettings.fog = i == 1)
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -63,7 +67,7 @@ func _pantheon_button(p: Dictionary, group: ButtonGroup) -> Button:
 	var b := Button.new()
 	b.toggle_mode = true
 	b.button_group = group
-	b.custom_minimum_size = Vector2(140, 112)
+	b.custom_minimum_size = Vector2(140, 92)
 	b.button_pressed = p["id"] == GameSettings.pantheon
 	b.focus_mode = Control.FOCUS_NONE
 	b.tooltip_text = p["realm"]
@@ -74,7 +78,7 @@ func _pantheon_button(p: Dictionary, group: ButtonGroup) -> Button:
 	b.add_child(box)
 	var die := TextureRect.new()
 	die.texture = DiceArt.face(p["dice"], 1)
-	die.custom_minimum_size = Vector2(64, 64)
+	die.custom_minimum_size = Vector2(52, 52)
 	die.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	die.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	die.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS

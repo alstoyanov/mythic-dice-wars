@@ -6,23 +6,32 @@ and paste it as it is, with nothing to fill in. For the reasons behind them, see
 
 | File | What | Prompts |
 |---|---|---|
-| [01_dice_towers.md](01_dice_towers.md) | battle dice towers (tower, tray, tray front), per pantheon | 21 |
+| [01_dice_towers.md](01_dice_towers.md) | battle dice towers (tower, tray, tray front): all 7 done; the rules for a new one | 21 |
 | [02_dice_skins.md](02_dice_skins.md) | dice sheets: all done; the rules for a new one | 0 |
 | [03_realm_themes.md](03_realm_themes.md) | menu backgrounds, frames and buttons for 8 new pantheons | 48 |
 | [04_hud_icons.md](04_hud_icons.md) | war-screen icons | 12 |
 | [05_effects.md](05_effects.md) | effect sprite sheets | 5 |
-| [06_key_art.md](06_key_art.md) | key art, app icon, logo | 3 |
+| [06_key_art.md](06_key_art.md) | key art, app icon, logo: pictures done, the logo still to make | 3 |
 | [07_music.md](07_music.md) | menu and war music per pantheon, stings (Suno) | 14 tracks |
 | [08_sound_effects.md](08_sound_effects.md) | sound effects, awakening voices | 21 |
 
 ## Done and in the game
 
-- **Greek:** the dice tower (tower, tray, tray front). Other pantheons borrow it until they have their own.
+- **Dice towers** for all 7 pantheons (tower, tray, tray front), in
+  `Godot/assets/images/dice-wars/dice_towers/<greece|norse|egypt|china|maya|mesopotamia|yoruba>/` as `tower.jpg`,
+  `tray.jpg` and `tray_front.jpg`. The Norse and Mayan trays were redone straight on; their fronts are cut from
+  the tray picture itself, so they fit exactly and no `tray_front.jpg` is needed (`FRONT_FROM_TRAY` in
+  `tools/generated_art.py`; the replaced pictures are in `dice_towers/_replaced/`). The Mesopotamian front adds a
+  ledge the tray does not have, so the game leaves it out (`TOWER_LAYOUT`).
+- **Key art and app icon:** `Godot/assets/images/dice-wars/key/` (`key_art.jpg`, `key_art_portrait.jpg`, `icon.jpg`).
+  The key art fills the splash screen; the icon (cut out of its background, rounded corners transparent) is the
+  window and project icon.
 - **Shared:** all 12 HUD icons; the effects (dust, lightning, motes, ward dome, crumble). The lightning sheet has
   two broken frames, so regenerating it on black (see 05) would help.
 
-New pictures are cut into game assets by `python tools/prepare_assets.py generated`; add each new file's line to
-`GENERATED` in `tools/generated_art.py` first (the generator's file names are random).
+New pictures are cut into game assets by `python tools/prepare_assets.py generated`. Rename each new file when you
+sort it into its folder (the generator's names are random), then add its line to `GENERATED` in
+`tools/generated_art.py` (a new pantheon's tower: one line in `TOWER_FOLDERS`).
 
 ## What already exists (do not regenerate)
 

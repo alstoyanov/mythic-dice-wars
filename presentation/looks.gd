@@ -73,14 +73,25 @@ static func player_color(color_index: int) -> Color:
 static var _icons: Dictionary = {}
 static var _fx: Dictionary = {}
 
-## The dice tower of a pantheon for battles: {tower, tray, tray_front} (Texture2D), or the first pantheon
-## that has one while the others are still being made; {} if none exists.
+## How a tower's pieces fit together when its layout.json does not say (see tools/generated_art.py
+## TOWER_LAYOUT): draw the tray front over the dice; the dice row at 42% of the tray's height, spreading
+## a third of its width each way; the tray at its standard size.
+const TOWER_LAYOUT := {"front": true, "floor": 0.42, "reach": 0.33, "tray_width": 1.0}
+
+## The dice tower of a pantheon for battles: {tower, tray, tray_front (Texture2D), layout (TOWER_LAYOUT
+## with this tower's values)}, or the first pantheon that has one while the others are still being made;
+## {} if none exists.
 static func tower(pantheon: String) -> Dictionary:
 	for id in [pantheon] + GodCatalog.PANTHEONS.map(func(p: Dictionary) -> String: return p["id"]):
 		var dir := "res://assets/towers/%s/" % id
 		if ResourceLoader.exists(dir + "tower.png") and ResourceLoader.exists(dir + "tray.png"):
-			var t := {"tower": load(dir + "tower.png"), "tray": load(dir + "tray.png")}
-			if ResourceLoader.exists(dir + "tray_front.png"):
+			var t := {"tower": load(dir + "tower.png"), "tray": load(dir + "tray.png"), "layout": TOWER_LAYOUT.duplicate()}
+			var file := FileAccess.open(dir + "layout.json", FileAccess.READ)
+			if file != null:
+				var data = JSON.parse_string(file.get_as_text())
+				if data is Dictionary:
+					t["layout"].merge(data, true)
+			if t["layout"]["front"] and ResourceLoader.exists(dir + "tray_front.png"):
 				t["tray_front"] = load(dir + "tray_front.png")
 			return t
 	return {}

@@ -11,6 +11,10 @@ const FAVOR_CAP := 12
 ## Secondary gods wake after this many conquests (when awakening is "milestone").
 const AWAKEN_CONQUESTS := 4
 const START_DICE_PER_TERRITORY := 3  # on average, including the one every territory starts with
+## The head start (against the first-mover advantage): before the first turn, the player who moves
+## k-th of n gets this share × (k - 1) / (n - 1) of one reinforcement, so the last player gets about
+## two thirds of a turn's dice and the first player none. Tuned by AI-vs-AI wars (GAME_DESIGN §12.4).
+const HEAD_START_SHARE := 0.66
 
 const FLAG_KEYS := ["reroll_ones_attack", "reroll_ones_defense", "attack_wins_ties", "defense_loses_ties",
 	"smart_reinforce", "no_reserve", "no_attack_stronger"]
@@ -30,6 +34,7 @@ class PlayerState extends RefCounted:
 	var conquests: int = 0
 	var eliminated: bool = false
 	var color_index: int = 0
+	var head_start: int = 0  ## extra dice received before the first turn (see HEAD_START_SHARE)
 	var effects: Dictionary = {}  ## the merged boons (and banes) of the awake gods, see MatchState.effects_of
 	var miracles_used: Array[String] = []  ## gods whose miracle was cast this turn
 
@@ -50,11 +55,16 @@ var conquests_this_turn: int = 0
 var awakening: String = "milestone"
 ## territory -> {"player": p, "bonus": n}: Guanyin's ward, until that player's next turn.
 var wards: Dictionary = {}
+## Fog of war: a player sees only their own territories and those next to them (can_see). The rules
+## do not change; the screens and the computer players must not use what a player cannot see.
+var fog: bool = false
 
 
 ## `player_defs`: [{name, pantheon, primary, secondary, is_ai, ai_level}], in seat order. The turn
 ## order is shuffled, the territories dealt evenly and every player gets the same number of dice.
-static func create(realm: RealmMap, player_defs: Array, rng: RandomNumberGenerator, awaken: String = "milestone") -> MatchState:
+## With `head_start`, the players after the first then get their head start (HEAD_START_SHARE).
+static func create(realm: RealmMap, player_defs: Array, rng: RandomNumberGenerator, awaken: String = "milestone",
+		head_start: bool = true) -> MatchState:
 	var s := MatchState.new()
 	s.map = realm
 	s.awakening = awaken
@@ -94,7 +104,40 @@ static func create(realm: RealmMap, player_defs: Array, rng: RandomNumberGenerat
 			if s.dice[t] < s.max_dice(p.index):
 				s.dice[t] += 1
 				extra -= 1
+	if head_start:
+		for p in s.players:
+			p.head_start = s.head_start_dice(p.index)
+			var left := s._place(p.index, p.head_start, rng, {})
+			p.reserve = mini(RESERVE_CAP, left)
 	return s
+
+
+## Can player `p` see territory `t` (its owner and dice)? Always without fog; with fog only their
+## own territories and their neighbours. A fallen player sees everything.
+func can_see(p: int, t: int) -> bool:
+	if not fog or p < 0 or players[p].eliminated or owners[t] == p:
+		return true
+	for nb in map.neighbors(t):
+		if owners[nb] == p:
+			return true
+	return false
+
+
+## can_see for every territory, as 1 / 0.
+func visible_to(p: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(owners.size())
+	for t in owners.size():
+		out[t] = 1 if can_see(p, t) else 0
+	return out
+
+
+## The head start of the player who moves `p`-th (0 = first): a share of one reinforcement.
+func head_start_dice(p: int) -> int:
+	var n := players.size()
+	if n < 2 or p == 0:
+		return 0
+	return roundi(reinforcement_preview(p) * HEAD_START_SHARE * float(p) / (n - 1))
 
 
 static func _shuffle(arr: Array, rng: RandomNumberGenerator) -> void:
@@ -454,6 +497,8 @@ func miracle_block_reason(god_id: String, target: int = -1) -> String:
 		return "Needs %d favour." % m["cost"]
 	if target < 0:
 		return ""
+	if not can_see(current, target):
+		return "That territory is hidden by the fog of war."
 	match m["kind"]:
 		"smite":
 			if owners[target] == current:
@@ -520,6 +565,21 @@ func end_turn(rng: RandomNumberGenerator) -> Dictionary:
 			out["tribute"][biggest] = lost
 	var pool := reinforcement_preview(p) + player.reserve
 	player.reserve = 0
+	pool = _place(p, pool, rng, out["placed"])
+	if _fx(p, "no_reserve", false):
+		out["lost"] = pool
+	else:
+		player.reserve = mini(RESERVE_CAP, pool)
+		out["lost"] = pool - player.reserve
+	out["reserve"] = player.reserve
+	_advance()
+	out["next"] = current
+	return out
+
+
+## Places `pool` dice one at a time on random territories of player `p` that are not full (border
+## territories first for a smart_reinforce god). Counts them in `placed` (t -> n); returns what did not fit.
+func _place(p: int, pool: int, rng: RandomNumberGenerator, placed: Dictionary) -> int:
 	var own := territories_of(p)
 	var cap := max_dice(p)
 	var first: Array[int] = []
@@ -540,17 +600,9 @@ func end_turn(rng: RandomNumberGenerator) -> Dictionary:
 			break
 		var t := open[rng.randi_range(0, open.size() - 1)]
 		dice[t] += 1
-		out["placed"][t] = out["placed"].get(t, 0) + 1
+		placed[t] = placed.get(t, 0) + 1
 		pool -= 1
-	if _fx(p, "no_reserve", false):
-		out["lost"] = pool
-	else:
-		player.reserve = mini(RESERVE_CAP, pool)
-		out["lost"] = pool - player.reserve
-	out["reserve"] = player.reserve
-	_advance()
-	out["next"] = current
-	return out
+	return pool
 
 
 func _advance() -> void:

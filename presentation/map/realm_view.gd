@@ -10,6 +10,9 @@ extends Control
 ## lists the art that will replace the flat colours). Shows what it was last told (refresh()), not
 ## the live MatchState, so the game screen decides when a battle's outcome appears.
 ##
+## Fog of war (MatchState.fog): a territory the viewer cannot see is drawn as drifting grey mist,
+## without its owner's colour, dice, pennant or effects (is_seen).
+##
 ## Input: click / tap a territory (territory_clicked); mouse wheel, pinch or trackpad to zoom; drag to
 ## pan; right click to cancel. When zoomed out (or for a huge stack) a stack shrinks to one die and a
 ## number; hovering or selecting a territory shows its full tower again.
@@ -26,6 +29,7 @@ const BASE := 14.0  ## thickness of the island below the lowest land
 const DIE := 16.0  ## width of one die on the map
 const COMPACT_BELOW := 12.0  ## on-screen die width below which stacks collapse to a single die
 const DRAG_START := 10.0
+const MIST := Color(0.6, 0.63, 0.69)  ## the ground of a territory hidden by the fog of war
 
 var state: MatchState
 var realm: RealmMap
@@ -41,6 +45,7 @@ var target_color: Color = Color(1.0, 0.85, 0.3)
 var hover: int = -1
 var arrow: Vector2i = Vector2i(-1, -1)  ## an attack being fought: from, to
 var interactive: bool = true
+var viewer: int = -1  ## whose eyes the map shows under fog of war (-1: everything)
 
 var _order: Array[Vector2i] = []  ## cells in drawing order (back to front)
 var _shape: PackedVector2Array = PackedVector2Array()  ## a cell's top outline around its centre
@@ -49,6 +54,7 @@ var _edge_dir: Array[int] = []
 ## The edges facing the camera, drawn as cliffs: [corner a, corner b, shade 0..1].
 var _front: Array = []
 var _jitter: Dictionary = {}  ## cell -> brightness variation
+var _seen: PackedByteArray = PackedByteArray()  ## per territory: 1 if the viewer sees it (refresh)
 var _capitals: Dictionary = {}  ## player -> territory with their pennant (the heart of their largest region)
 var _effects: Array[Dictionary] = []  ## {t, sheet, age, life, size, rise}
 var _bounds: Rect2
@@ -108,6 +114,7 @@ func setup(match_state: MatchState, realm_terrain: Dictionary) -> void:
 func refresh() -> void:
 	owners = state.owners.duplicate()
 	dice = state.dice.duplicate()
+	_seen = state.visible_to(viewer)
 	_capitals.clear()
 	for p in state.alive_players():
 		var best := -1
@@ -204,13 +211,22 @@ func territory_at_screen(p: Vector2) -> int:
 	return -1
 
 
-# --- Effects ------------------------------------------------------------------------------------
+## Does the viewer see territory `t` now (as of the last refresh)? Always true without fog.
+func is_seen(t: int) -> bool:
+	return t >= 0 and t < _seen.size() and _seen[t] == 1
+
+
+# --- Effects (none over a territory hidden in the fog) ------------------------------------------
 
 func flash(t: int, color: Color, life: float = 0.6) -> void:
+	if not is_seen(t):
+		return
 	_flashes.append({"t": t, "color": color, "age": 0.0, "life": life})
 
 
 func float_text(t: int, text: String, color: Color, life: float = 1.2) -> void:
+	if not is_seen(t):
+		return
 	_floaters.append({"t": t, "text": text, "color": color, "age": 0.0, "life": life})
 
 
@@ -218,7 +234,7 @@ func float_text(t: int, text: String, color: Color, life: float = 1.2) -> void:
 ## `size`: world units across; `rise`: how far above the dice footing its centre sits (world units).
 func play_fx(fx_name: String, t: int, life: float = 0.7, size: float = 48.0, rise: float = 14.0) -> void:
 	var sheet := Looks.fx(fx_name)
-	if sheet != null and t >= 0:
+	if sheet != null and is_seen(t):
 		_effects.append({"t": t, "sheet": sheet, "age": 0.0, "life": life, "size": size, "rise": rise,
 			"name": fx_name, "seed": randi()})
 
@@ -306,8 +322,10 @@ func _notification(what: int) -> void:
 
 # --- Drawing ------------------------------------------------------------------------------------
 
-## The owner's colour for a territory's ground: the realm's ground colour, tinted.
+## The owner's colour for a territory's ground: the realm's ground colour, tinted (mist if hidden).
 func _owner_color(t: int) -> Color:
+	if not is_seen(t):
+		return (terrain["top"] as Color).lerp(MIST, 0.7)
 	return (terrain["top"] as Color).lerp(Looks.player_color(state.players[owners[t]].color_index), 0.6)
 
 
@@ -355,6 +373,8 @@ func _draw() -> void:
 			draw_polygon(PackedVector2Array([a, b, b + depth, a + depth]), PackedColorArray([upper, upper, lower, lower]))
 		var top := _owner_color(t)
 		var j: float = _jitter[c]
+		if not is_seen(t):  # slow drifting banks of mist
+			j += 0.05 * sin(_time * 0.7 + c.x * 0.45 + c.y * 0.3) + 0.03 * sin(_time * 1.1 - c.x * 0.2 + c.y * 0.6)
 		draw_colored_polygon(top_pts, Color(top.r + j, top.g + j, top.b + j, 1.0))
 		var over := _overlay(t)
 		if over.a > 0.0:
@@ -417,6 +437,8 @@ func _draw_stacks() -> void:
 	for p in _capitals:
 		capital_of[_capitals[p]] = p
 	for t: int in order:
+		if not is_seen(t):
+			continue
 		if capital_of.has(t):
 			_draw_pennant(territory_screen_pos(t) + Vector2(-w * 0.95, w * 0.1), scale, Looks.player_color(state.players[capital_of[t]].color_index))
 		var p := owners[t]
@@ -459,7 +481,7 @@ func _draw_pennant(foot: Vector2, scale: float, color: Color) -> void:
 func _draw_wards(scale: float) -> void:
 	var sheet := Looks.fx("ward_dome")
 	for t in state.wards:
-		if state.wards[t]["player"] != owners[t]:
+		if state.wards[t]["player"] != owners[t] or not is_seen(t):
 			continue
 		if sheet == null:
 			continue

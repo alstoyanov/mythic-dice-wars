@@ -1,8 +1,11 @@
 """Cuts the generated art (docs/art_prompts) into game assets. Called by prepare_assets.py ("generated").
 
-The generator names files at random, so GENERATED below says which source file is which asset. When new
+The generator names files at random: rename them when sorting them into the source folders (for example
+dice_towers/norse/tower.jpg), and GENERATED below says which source file becomes which asset. When new
 pictures arrive: add their lines (source path under Godot/assets/images/dice-wars -> target under assets/,
 and how to cut it), then run  python tools/prepare_assets.py generated
+A new pantheon's dice tower needs only its folder in TOWER_FOLDERS (and, if its pieces fit differently,
+a line in TOWER_LAYOUT; if its tray is seen straight on, its front can be cut from the tray: FRONT_FROM_TRAY).
 
 Kinds of cutting:
   cutout                   an object on white: the white around it removed (strictly, so white marble
@@ -17,22 +20,60 @@ Kinds of cutting:
   cut:<frames to skip>     the same for a solid object in each frame (a white flag): cut out frame by frame
   light:<frames to skip>   light painted on BLACK (the way glows should be generated): black turned into
                            transparency, so the light keeps its full brightness
+  front:<share>            a tray's front wall cut from the tray itself (cutout, then everything above
+                           <share> of its height made transparent, the size kept): it fits the tray exactly
+  picture:<longest side>   a whole painting (key art): scaled down and saved as it is (JPEG for .jpg)
+  appicon:<x0,y0,x1,y1,r>:<side>
+                           the app icon: the generator paints the rounded square on a background, so the
+                           square (box x0..x1, y0..y1 in the source, corner radius r) is cut out, its
+                           corners made transparent, and saved at side × side pixels
 Needs Pillow, numpy and scipy.
 """
+import json
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 from scipy import ndimage
 
 G = "Gemini_Generated_Image_"
 
+# The dice towers: source folder (Godot/assets/images/dice-wars/dice_towers/<folder>) -> pantheon id.
+# Each folder holds tower.jpg, tray.jpg and tray_front.jpg (not needed where FRONT_FROM_TRAY cuts the front).
+TOWER_FOLDERS = {"greece": "greek", "norse": "norse", "egypt": "egyptian", "china": "chinese", "maya": "mayan",
+                 "mesopotamia": "mesopotamian", "yoruba": "yoruba"}
+
+# How each tower's pieces fit together in the battle screen, written to towers/<pantheon>/layout.json
+# (missing keys: the defaults in Looks.tower). front: draw tray_front over the dice (off when it does not
+# match the tray's shape, e.g. a ledge the tray lacks); floor: where the dice row sits, as a share
+# of the tray's height; reach: how far the row spreads from the middle, as a share of the tray's width;
+# tray_width: the tray's size against the standard (taller trays drawn a little smaller).
+TOWER_LAYOUT = {
+    "norse": {"floor": 0.5, "reach": 0.27},
+    "mayan": {"floor": 0.48, "reach": 0.26},
+    "chinese": {"tray_width": 0.92, "floor": 0.4, "reach": 0.31},
+    "yoruba": {"tray_width": 0.92, "floor": 0.4, "reach": 0.31},
+    "egyptian": {"floor": 0.43, "reach": 0.31},
+    "mesopotamian": {"front": False, "floor": 0.36, "reach": 0.31},
+}
+
+# Trays seen straight on whose front wall is cut from the tray picture instead of a separate tray_front.jpg
+# (pantheon -> where the front rim begins, as a share of the cut-out tray's height).
+FRONT_FROM_TRAY = {"norse": 0.62, "mayan": 0.59}
+
 # source (relative to Godot/assets/images/dice-wars) -> (target relative to assets/, kind)
 GENERATED = {
-    # Greek dice tower
-    f"dice_towers/greece/{G}711ba711ba711ba7.jpg": ("towers/greek/tower.png", "cutout"),
-    f"dice_towers/greece/{G}8apsq68apsq68aps.jpg": ("towers/greek/tray.png", "cutout"),
-    f"dice_towers/greece/{G}evbm6wevbm6wevbm.jpg": ("towers/greek/tray_front.png", "cutout"),
+    # Dice towers, one per pantheon
+    **{f"dice_towers/{folder}/{part}.jpg": (f"towers/{pantheon}/{part}.png", "cutout")
+       for folder, pantheon in TOWER_FOLDERS.items() for part in ("tower", "tray", "tray_front")
+       if not (part == "tray_front" and pantheon in FRONT_FROM_TRAY)},
+    **{f"dice_towers/{folder}/tray.jpg#front": (f"towers/{pantheon}/tray_front.png", f"front:{FRONT_FROM_TRAY[pantheon]}")
+       for folder, pantheon in TOWER_FOLDERS.items() if pantheon in FRONT_FROM_TRAY},
+    # Key art (splash screen, store pages) and the app icon
+    "key/key_art.jpg": ("branding/key_art.jpg", "picture:1920"),
+    "key/key_art_portrait.jpg": ("branding/key_art_portrait.jpg", "picture:1920"),
+    "key/icon.jpg": ("branding/icon.png", "appicon:181,183,1867,1869,360:512"),
+    "key/icon.jpg#small": ("../icon.png", "appicon:181,183,1867,1869,360:256"),  # the project / window icon
     # HUD icons (shared)
     f"hud_icons/{G}a2z6uda2z6uda2z6.jpg": ("ui/icons/reinforce.png", "icon"),
     f"hud_icons/{G}d0adu2d0adu2d0ad.jpg": ("ui/icons/defence.png", "icon"),
@@ -81,12 +122,27 @@ def _cutout(img: Image.Image, white: int = 246) -> Image.Image:
         sizes = ndimage.sum(obj, lab, range(1, n + 1))
         obj = lab == (int(np.argmax(sizes)) + 1)
         obj = ndimage.binary_fill_holes(obj)
+    # Holes: the background seen through an opening (a tower's window) is enclosed, so it survived the
+    # step above. It is told apart from white marble by being large, flat and almost pure white.
+    holes = np.zeros(light.shape, dtype=bool)
+    inner, n_inner = ndimage.label(light & obj)
+    if n_inner:
+        sizes = ndimage.sum(np.ones(light.shape), inner, range(1, n_inner + 1))
+        for i in np.nonzero(sizes >= 120)[0] + 1:
+            px = a[inner == i]
+            if px.mean() >= 248 and px.std(axis=0).max() < 6:
+                holes |= inner == i
+    obj &= ~holes
     alpha = obj.astype(np.float32)
-    # The outermost pixels of the object: alpha from how far they are from white (soft edges).
+    # The outermost pixels of the object: alpha from how far they are from white (soft edges). Along the
+    # outline a little is always kept (the object's edge must not fray); around a hole the near-white edge
+    # fades out completely, or it would draw a light frame round the opening.
     rim = obj & ~ndimage.binary_erosion(obj, iterations=2)
+    hole_rim = rim & ndimage.binary_dilation(holes, iterations=3)
     lightness = a.min(axis=2).astype(np.float32)
     soft = np.clip((255.0 - lightness) / (255.0 - 200.0), 0.0, 1.0)
     alpha = np.where(rim, np.clip(soft * 1.4, 0.3, 1.0), alpha)
+    alpha = np.where(hole_rim, np.clip(soft * 1.4, 0.0, 1.0), alpha)
     rgba = np.dstack([a.astype(np.uint8), (alpha * 255).astype(np.uint8)])
     out = Image.fromarray(rgba, "RGBA")
     return out.crop(out.getbbox())
@@ -144,6 +200,14 @@ def process(src: Path, dst: Path, kind: str) -> None:
         small = _fit(img.convert("RGB"), 1024)
         out = _cutout(small)
         _fit(out, SIZES["cutout"]).save(dst, optimize=True)
+    elif kind.startswith("front:"):
+        out = _cutout(_fit(img.convert("RGB"), 1024))
+        a = np.asarray(out).copy()
+        cut = float(kind.split(":")[1]) * a.shape[0]
+        # Soft over 3 pixels, so the rim's edge is not a hard line across the dice.
+        keep = np.clip((np.arange(a.shape[0]) - cut) / 3.0 + 0.5, 0.0, 1.0)
+        a[..., 3] = (a[..., 3] * keep[:, None]).astype(np.uint8)
+        _fit(Image.fromarray(a, "RGBA"), SIZES["cutout"]).save(dst, optimize=True)
     elif kind == "icon":
         out = _cutout(_fit(img.convert("RGB"), 1024), white=236)
         side = max(out.size)
@@ -173,6 +237,21 @@ def process(src: Path, dst: Path, kind: str) -> None:
                 frame = _clear_edges(frame)
             strip.paste(frame.resize((s, s), Image.LANCZOS), (i * s, 0))
         strip.save(dst, optimize=True)
+    elif kind.startswith("picture:"):
+        out = _fit(img.convert("RGB"), int(kind.split(":")[1]))
+        if dst.suffix == ".jpg":
+            out.save(dst, quality=88, optimize=True)
+        else:
+            out.save(dst, optimize=True)
+    elif kind.startswith("appicon:"):
+        _, box, side = kind.split(":")
+        x0, y0, x1, y1, r = (int(v) for v in box.split(","))
+        square = img.convert("RGB").crop((x0, y0, x1, y1))
+        # The rounded corners, drawn 4× larger and scaled down for a smooth edge.
+        big = Image.new("L", (square.size[0] * 4, square.size[1] * 4), 0)
+        ImageDraw.Draw(big).rounded_rectangle((0, 0, big.size[0] - 1, big.size[1] - 1), radius=r * 4, fill=255)
+        square.putalpha(big.resize(square.size, Image.LANCZOS))
+        square.resize((int(side), int(side)), Image.LANCZOS).save(dst, optimize=True)
     else:
         raise ValueError(kind)
 
@@ -180,12 +259,17 @@ def process(src: Path, dst: Path, kind: str) -> None:
 def prepare(source_root: Path, project_assets: Path) -> list[Path]:
     made = []
     for rel, (target, kind) in GENERATED.items():
-        src = source_root / rel
+        src = source_root / rel.split("#")[0]  # "#..." tells apart two assets made from one source
         if not src.exists():
             print("missing", src)
             continue
         dst = project_assets / target
         process(src, dst, kind)
         made.append(dst)
+    for pantheon, layout in TOWER_LAYOUT.items():
+        dst = project_assets / "towers" / pantheon / "layout.json"
+        if dst.parent.exists():
+            dst.write_text(json.dumps(layout, indent=1) + "\n", encoding="utf-8")
+            made.append(dst)
     print("generated art:", len(made), "files")
     return made
