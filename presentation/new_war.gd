@@ -8,49 +8,48 @@ const TILE_GAP := 10
 
 var _backdrop: MenuBackdrop
 var _pantheon_buttons: Dictionary = {}  ## pantheon id -> Button
+var _col: VBoxContainer
+var _body: BoxContainer  ## the pantheons and the options
+var _left: VBoxContainer  ## the pantheons (and, on a phone held sideways, the buttons under them)
+var _grid: HFlowContainer
+var _options: GridContainer
+var _picks: Array[OptionButton] = []
+var _buttons: HBoxContainer  ## Back, the book, Next
 
 
 func _ready() -> void:
 	_backdrop = Ui.setup_screen(self)
-	var col := Ui.centered_column(self, 10)
-	Ui.title(col, "New War")
+	_col = Ui.centered_column(self, 10)
+	Ui.title(_col, "New War")
 
-	# The pantheons and the options: side by side where the screen is wide enough (a computer, a tablet
-	# held sideways), else one above the other (and the panel scrolls if it must).
-	var body := BoxContainer.new()
-	body.add_theme_constant_override("separation", 28)
-	col.add_child(body)
-	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 8)
-	body.add_child(left)
+	# The pantheons and the options: side by side where the screen is wide enough (a computer, a phone
+	# or tablet held sideways), else one above the other. Everything fits on the screen (see _layout).
+	_body = BoxContainer.new()
+	_body.add_theme_constant_override("separation", 28)
+	_col.add_child(_body)
+	_left = VBoxContainer.new()
+	_left.add_theme_constant_override("separation", 8)
+	_body.add_child(_left)
 	var heading := Label.new()
 	heading.text = "Choose your pantheon"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	left.add_child(heading)
-	var grid := HFlowContainer.new()
-	grid.alignment = FlowContainer.ALIGNMENT_CENTER
-	grid.add_theme_constant_override("h_separation", TILE_GAP)
-	grid.add_theme_constant_override("v_separation", TILE_GAP)
-	left.add_child(grid)
+	_left.add_child(heading)
+	_grid = HFlowContainer.new()
+	_grid.alignment = FlowContainer.ALIGNMENT_CENTER
+	_grid.add_theme_constant_override("h_separation", TILE_GAP)
+	_grid.add_theme_constant_override("v_separation", TILE_GAP)
+	_left.add_child(_grid)
 	var group := ButtonGroup.new()
 	for p in GodCatalog.PANTHEONS:
-		var b := _pantheon_button(p, group)
-		grid.add_child(b)
-		var die: Control = b.get_meta("die")
-		var name_label: Label = b.get_meta("name_label")
-		Ui.on_resize(b, func() -> void:
-			var k := UiTheme.ui_scale()
-			b.custom_minimum_size = TILE * k
-			die.custom_minimum_size = Vector2(DIE, DIE) * k
-			# Long names (Mesopotamian) get a smaller font rather than spilling over the frame.
-			Ui.fit_font(name_label, roundi(18.0 * k), TILE.x * k - 24.0))
+		_grid.add_child(_pantheon_button(p, group))
 
-	var options := GridContainer.new()
-	options.columns = 2
-	options.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	options.add_theme_constant_override("h_separation", 14)
-	options.add_theme_constant_override("v_separation", 6)
-	body.add_child(options)
+	_options = GridContainer.new()
+	_options.columns = 2
+	_options.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_options.add_theme_constant_override("h_separation", 14)
+	_options.add_theme_constant_override("v_separation", 6)
+	_body.add_child(_options)
+	var options := _options
 	_option(options, "Players", range(2, 9).map(func(n: int) -> String: return "%d (you and %d %s)" % [n, n - 1, "rival" if n == 2 else "rivals"]),
 		GameSettings.players - 2, func(i: int) -> void: GameSettings.players = i + 2)
 	var sizes: Array = MapGenerator.SIZES.keys()
@@ -66,13 +65,14 @@ func _ready() -> void:
 		func(i: int) -> void: GameSettings.awakening = "milestone" if i == 0 else "start")
 	_option(options, "Turn order", ["Balanced (head start)", "Classic"],
 		0 if GameSettings.head_start else 1, func(i: int) -> void: GameSettings.head_start = i == 0)
-	_option(options, "Fog of war", ["Off", "On (see only next to your land)"],
+	_option(options, "Fog of war", ["Off", "On (see only near your land)"],
 		1 if GameSettings.fog else 0, func(i: int) -> void: GameSettings.fog = i == 1)
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 28)
-	col.add_child(row)
+	_col.add_child(row)
+	_buttons = row
 	var back := IconButton.new(IconButton.Icon.BACK, false, "Back")
 	back.pressed.connect(func() -> void:
 		GameSettings.save()
@@ -87,21 +87,61 @@ func _ready() -> void:
 	next.pressed.connect(_on_next)
 	row.add_child(next)
 
-	# Side by side with as many tile columns as fit (4, 3 or 2); else the tiles above the options.
-	Ui.on_resize(body, func() -> void:
-		var room := Ui.panel_content_width()
-		# (some room to spare: the realms' frames are wider than the plain panel's margin)
-		var beside := room - 28.0 - options.get_combined_minimum_size().x - 60.0
-		var columns := 4
-		while columns >= 2 and _tiles_width(columns) > beside:
+	Ui.on_resize(_body, _layout)
+
+
+## Fits the screen without scrolling. A computer or tablet: the tiles beside the options in as many
+## columns as fit (4, 3 or 2), else above them. A phone held upright: the tiles above the options, as
+## small as needed for 4 or 3 columns. A phone held sideways (little height): 4 columns of smaller
+## tiles beside the options, with the buttons under the tiles.
+func _layout() -> void:
+	var k := UiTheme.ui_scale()
+	var room := Ui.panel_content_width()
+	var sideways := Ui.is_sideways()
+	# The pickers as wide as their longest choice beside the tiles; filling the width below them.
+	var natural := 0.0
+	for pick in _picks:
+		natural = maxf(natural, _natural_width(pick))
+	var labels := 0.0
+	for i in range(0, _options.get_child_count(), 2):
+		labels = maxf(labels, (_options.get_child(i) as Control).get_combined_minimum_size().x)
+	var options_w := labels + 14.0 + natural
+	# (some room to spare: the realms' frames are wider than the plain panel's margin)
+	var beside := room - 28.0 - options_w - 40.0
+	var columns := 4
+	var tile_w := TILE.x * k
+	if sideways:
+		tile_w = minf(tile_w, (beside - 3.0 * TILE_GAP) / 4.0)
+	else:
+		while columns >= 2 and columns * (tile_w + TILE_GAP) - TILE_GAP > beside:
 			columns -= 1
-		body.vertical = columns < 2
-		grid.custom_minimum_size.x = minf(_tiles_width(4 if body.vertical else columns), room))
+	_body.vertical = not sideways and columns < 2
+	if _body.vertical:
+		columns = 4 if room >= 4.0 * (110.0 + TILE_GAP) else 3
+		tile_w = minf(tile_w, (room - (columns - 1) * TILE_GAP) / columns)
+	for pick in _picks:
+		pick.custom_minimum_size.x = 0.0 if _body.vertical else natural
+	_options.add_theme_constant_override("v_separation", 3 if sideways else 6)
+	var tile := Vector2(tile_w, tile_w * TILE.y / TILE.x)
+	for b: Button in _pantheon_buttons.values():
+		b.custom_minimum_size = tile
+		(b.get_meta("die") as Control).custom_minimum_size = Vector2.ONE * DIE * tile.x / TILE.x
+		# Long names (Mesopotamian) get a smaller font rather than spilling over the frame.
+		Ui.fit_font(b.get_meta("name_label"), roundi(18.0 * minf(k, tile.x / TILE.x * 1.15)), tile.x - 20.0, 11)
+	_grid.custom_minimum_size.x = columns * (tile.x + TILE_GAP) - TILE_GAP + 1.0
+	var home := _left if sideways else _col
+	if _buttons.get_parent() != home:
+		_buttons.reparent(home)
 
 
-## The width of `columns` tiles in a row.
-static func _tiles_width(columns: int) -> float:
-	return columns * (TILE.x * UiTheme.ui_scale() + TILE_GAP) - TILE_GAP + 1.0
+## How wide a picker must be to show its longest choice.
+static func _natural_width(pick: OptionButton) -> float:
+	var font := pick.get_theme_font("font")
+	var fs := pick.get_theme_font_size("font_size")
+	var widest := 0.0
+	for i in pick.item_count:
+		widest = maxf(widest, font.get_string_size(pick.get_item_text(i), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
+	return widest + 56.0  # the frame and the arrow
 
 
 func _pantheon_button(p: Dictionary, group: ButtonGroup) -> Button:
@@ -155,6 +195,9 @@ func _option(grid: GridContainer, label_text: String, items: Array, selected: in
 		pick.add_item(str(item))
 	pick.selected = maxi(0, selected)
 	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pick.clip_text = true  # on a narrow screen a long choice is cut short, not the panel made wider
+	pick.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_picks.append(pick)
 	pick.item_selected.connect(func(i: int) -> void:
 		Sound.play("toggle")
 		on_pick.call(i))

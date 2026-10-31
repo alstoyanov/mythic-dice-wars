@@ -1,6 +1,7 @@
 extends Node
 ## Opens every screen and saves a picture of each (needs a window, not --headless):
 ##   godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=1280x800] [--pantheon=norse] [--grid=hex] [--fog=on|off]
+##     [--screens=new_war,god_book] (only these; a list without game_screen skips the war's pictures)
 ## Also a smoke test: a script error on any screen shows in the output.
 
 const SCREENS := ["splash", "main_menu", "new_war", "god_select", "god_book", "account", "settings", "help", "game_screen"]
@@ -40,16 +41,36 @@ func _run() -> void:
 	GameSettings.ensure_loaded()
 	GameSettings.battle_hold = 1  # results shown for a moment, never waiting (except below)
 	GameSettings.awakening = "start"  # both gods awake, so their bonuses show in the battles
+	get_window().min_size = Vector2i.ZERO  # phone sizes are smaller than a computer's window may be
 	root.size = win_size
 	DisplayServer.window_set_size(win_size)
 	await get_tree().process_frame
 	var suffix := "_%dx%d" % [win_size.x, win_size.y]
-	for screen in SCREENS:
+	var screens: Array = SCREENS
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--screens="):
+			screens = Array(arg.get_slice("=", 1).split(","))
+	for screen in screens:
 		get_tree().change_scene_to_file("res://presentation/%s.tscn" % screen)
 		for i in 40:
 			await get_tree().process_frame
 		await get_tree().create_timer(0.6).timeout
 		_save(out, screen + suffix)
+		if screen == "god_book":  # its other pages: a realm's gods, and the god with the longest story
+			var book: GodBook = get_tree().current_scene
+			book._show("gods")
+			await get_tree().create_timer(0.6).timeout
+			_save(out, "god_book_gods" + suffix)
+			var longest := ""
+			for g in GodCatalog.gods_of(book._pantheon, GodCatalog.PRIMARY) + GodCatalog.gods_of(book._pantheon, GodCatalog.SECONDARY):
+				var lore := GodLore.god(g["id"])
+				if longest == "" or str(lore.get("lore", "")).length() + str(lore.get("did_you_know", "")).length() \
+						> str(GodLore.god(longest).get("lore", "")).length() + str(GodLore.god(longest).get("did_you_know", "")).length():
+					longest = g["id"]
+			book._god = longest
+			book._show("god")
+			await get_tree().create_timer(0.6).timeout
+			_save(out, "god_book_god" + suffix)
 	# A battle in progress and a later state of the war: play a few computer turns.
 	var game := get_tree().current_scene
 	if game != null and game.get("state") != null:

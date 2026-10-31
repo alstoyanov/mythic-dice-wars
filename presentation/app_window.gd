@@ -50,12 +50,15 @@ func _scale_for_screen() -> void:
 	get_window().content_scale_factor = clampf(factor, 1.0, 3.5)
 
 
-## The Android back button and the iOS equivalent: go to the menu, or leave from the menu.
+## The Android back button and the iOS equivalent: a screen with pages of its own steps back a page
+## (its go_back(), e.g. the Book of the Gods); else go to the menu, or leave from the menu.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		var scene := get_tree().current_scene
 		var path := scene.scene_file_path if scene != null else ""
-		if path == MENU_SCENE or path == SPLASH_SCENE or path == "":
+		if scene != null and scene.has_method("go_back"):
+			scene.go_back()
+		elif path == MENU_SCENE or path == SPLASH_SCENE or path == "":
 			get_tree().quit()
 		else:
 			get_tree().change_scene_to_file(MENU_SCENE)

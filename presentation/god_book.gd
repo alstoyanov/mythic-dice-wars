@@ -1,33 +1,32 @@
 class_name GodBook
 extends Control
 ## The Book of the Gods: every pantheon and its gods, with what they do in a war and their stories
-## (GodLore, from Tile Shifter), to help choose a pantheon. Browsing a pantheon shows its realm's look
-## (the player's own choices are put back on leaving); "Play with <god>" takes that pantheon and god
-## into New War.
+## (GodLore, from Tile Shifter), to help choose a pantheon. Three pages, each fitting the screen
+## without scrolling (a phone held either way): the realms; a realm's story and its gods; a god's
+## powers and story. Back (and a phone's back gesture, see go_back) returns to the page before.
+## Browsing a realm shows its look (the player's own choice is put back on leaving); "Play with <god>"
+## takes that pantheon and god into New War.
 
 const SCENE := "res://presentation/god_book.tscn"
-const TAB := Vector2(104, 78)  ## a pantheon's tab (die and name), grown with the text
-const THUMB := 92.0  ## a god's portrait in the list
-const PORTRAIT := 150.0  ## the chosen god's portrait
-const LIST_GAP := 8
+const GAP := 10.0
+const MIN_FIT := 0.6  ## a page shrinks to fit the screen down to this much of its size, no further
 
-## Where Back leads: the screen that opened the book (see open).
+## Where Back leads from the first page: the screen that opened the book (see open).
 static var _return_scene := "res://presentation/main_menu.tscn"
 
 var _backdrop: MenuBackdrop
+var _col: VBoxContainer
 var _saved_pantheon := ""  ## the player's pantheon when the book opened
 var _keep := false  ## "Play with" pressed: the shown pantheon becomes the player's
+var _page := "realms"  ## "realms", "gods" or "god"
 var _pantheon := ""
 var _god := ""
-var _realm_line: Label
-var _about: Label
-var _list: VBoxContainer  ## the gods of the shown pantheon
-var _detail: VBoxContainer  ## the chosen god
-var _lore_scroll: ScrollContainer
-var _play: Button
+var _fit := 1.0  ## the page's size, made smaller until it fits the screen
+var _shown_for := Vector2.ZERO  ## the screen size the page was built for
+var _themed := ""  ## the realm whose look is shown
 
 
-## Opens the book; Back returns to `from` (a scene path).
+## Opens the book; Back from its first page returns to `from` (a scene path).
 static func open(tree: SceneTree, from: String) -> void:
 	_return_scene = from
 	tree.change_scene_to_file(SCENE)
@@ -36,85 +35,13 @@ static func open(tree: SceneTree, from: String) -> void:
 func _ready() -> void:
 	GameSettings.ensure_loaded()
 	_saved_pantheon = GameSettings.pantheon
+	_pantheon = _saved_pantheon
+	_themed = _saved_pantheon
 	_backdrop = Ui.setup_screen(self)
-	var col := Ui.centered_column(self, 10)
-	Ui.title(col, "Book of the Gods")
-
-	var tabs := HFlowContainer.new()
-	tabs.alignment = FlowContainer.ALIGNMENT_CENTER
-	tabs.add_theme_constant_override("h_separation", 8)
-	tabs.add_theme_constant_override("v_separation", 8)
-	col.add_child(tabs)
-	var group := ButtonGroup.new()
-	for p in GodCatalog.PANTHEONS:
-		tabs.add_child(_tab(p, group))
-	Ui.on_resize(tabs, func() -> void:
-		var k := UiTheme.ui_scale()
-		tabs.custom_minimum_size.x = minf(GodCatalog.PANTHEONS.size() * (TAB.x * k + 8.0), Ui.panel_content_width()))
-
-	var intro := VBoxContainer.new()
-	intro.add_theme_constant_override("separation", 0)
-	col.add_child(intro)
-	_realm_line = Label.new()
-	_realm_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	intro.add_child(_realm_line)
-	Ui.scaled_font(_realm_line, 18)
-	_about = Label.new()
-	_about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_about.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_about.modulate = Color(1, 1, 1, 0.8)
-	intro.add_child(_about)
-	Ui.scaled_font(_about, 15)
-
-	# The gods beside the chosen one where there is room, else above (and the page scrolls).
-	var body := BoxContainer.new()
-	body.add_theme_constant_override("separation", 24)
-	col.add_child(body)
-	_list = VBoxContainer.new()
-	_list.add_theme_constant_override("separation", 4)
-	body.add_child(_list)
-	var right := VBoxContainer.new()
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.add_theme_constant_override("separation", 8)
-	body.add_child(right)
-	_detail = VBoxContainer.new()
-	right.add_child(_detail)
-	_lore_scroll = ScrollContainer.new()
-	_lore_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	right.add_child(_lore_scroll)
-
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 28)
-	col.add_child(row)
-	var back := IconButton.new(IconButton.Icon.BACK, false, "Back")
-	back.pressed.connect(func() -> void: _leave(_return_scene))
-	row.add_child(back)
-	_play = Button.new()
-	_play.custom_minimum_size = Vector2(220, 44)
-	_play.tooltip_text = "Start a New War with this pantheon and this god."
-	_play.pressed.connect(_play_with)
-	Ui.hover_effect(_play)
-	row.add_child(_play)
-
-	Ui.on_resize(body, func() -> void:
-		var k := UiTheme.ui_scale()
-		var room := Ui.panel_content_width()
-		var list_w := 3 * (THUMB * k + 20.0 + LIST_GAP)
-		var side := room >= list_w + 24.0 + 420.0 * k
-		body.vertical = not side
-		_about.custom_minimum_size.x = minf(760.0 * k, room)
-		right.custom_minimum_size.x = minf(560.0 * k, room - (list_w + 24.0 if side else 0.0))
-		# Beside the list, the story scrolls in the room the screen leaves; above it (a phone), the
-		# whole page scrolls instead, so the story takes its full height.
-		if side:
-			_lore_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-			_lore_scroll.custom_minimum_size.y = clampf(Ui.usable_size().y - 520.0 * k, 110.0, 520.0)
-		else:
-			_lore_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-			_lore_scroll.custom_minimum_size.y = 0.0)
-
-	_show_pantheon(_saved_pantheon, GameSettings.primary)
+	_col = Ui.centered_column(self, 10)
+	Ui.on_resize(_col, func() -> void:
+		if Ui.usable_size() != _shown_for:  # a phone turned, a window resized: build the page again
+			_show(_page))
 
 
 func _exit_tree() -> void:
@@ -122,10 +49,17 @@ func _exit_tree() -> void:
 		GameSettings.pantheon = _saved_pantheon  # browsing only showed the realm
 
 
-func _leave(scene: String) -> void:
-	if not _keep:
-		GameSettings.pantheon = _saved_pantheon
-	get_tree().change_scene_to_file(scene)
+## The page before (Back, or a phone's back gesture via AppWindow).
+func go_back() -> void:
+	match _page:
+		"god":
+			_show("gods")
+		"gods":
+			_show("realms")
+		_:
+			if not _keep:
+				GameSettings.pantheon = _saved_pantheon
+			get_tree().change_scene_to_file(_return_scene)
 
 
 func _play_with() -> void:
@@ -140,172 +74,283 @@ func _play_with() -> void:
 	get_tree().change_scene_to_file("res://presentation/new_war.tscn")
 
 
-func _tab(p: Dictionary, group: ButtonGroup) -> Button:
+## Shows a page at full size, then smaller until it fits (see _fit_page).
+func _show(page: String) -> void:
+	_page = page
+	_fit = 1.0
+	_shown_for = Ui.usable_size()
+	_col.modulate.a = 0.0  # shown once it fits
+	_build()
+	_fit_page.call_deferred()
+
+
+func _build() -> void:
+	for c in _col.get_children():
+		_col.remove_child(c)
+		c.queue_free()
+	match _page:
+		"realms":
+			_build_realms()
+		"gods":
+			_build_gods()
+		"god":
+			_build_god()
+
+
+## Builds the page again a little smaller while it is taller than the screen, then fades it in.
+func _fit_page() -> void:
+	var page := _page
+	while true:
+		await get_tree().process_frame
+		await get_tree().process_frame  # (wrapped text knows its height once laid out)
+		if _page != page or not is_inside_tree():
+			return
+		var panel := _col.get_parent() as Control
+		if panel.get_combined_minimum_size().y <= Ui.usable_size().y - 4.0 or _fit <= MIN_FIT:
+			break
+		_fit = maxf(MIN_FIT, _fit - 0.07)
+		_build()
+	create_tween().tween_property(_col, "modulate:a", 1.0, 0.15)
+
+
+## The shown realm's look (only the look: put back on leaving unless "Play with"); not again while it
+## is already shown (that would restart the weather).
+func _theme() -> void:
+	if _themed == _pantheon:
+		return
+	_themed = _pantheon
+	GameSettings.pantheon = _pantheon
+	Ui.retheme(self, _backdrop)
+
+
+## The page's scale: the screen's (UiTheme.ui_scale) and the fitting's.
+func _k() -> float:
+	return UiTheme.ui_scale() * _fit
+
+
+## The width the page's content may take (not too wide to read on a big screen).
+func _room() -> float:
+	return minf(Ui.panel_content_width(), 1060.0 * UiTheme.ui_scale())
+
+
+# ───────────────────────── page 1: the realms ─────────────────────────
+
+func _build_realms() -> void:
+	_theme()
+	_title("Book of the Gods")
+	_text(_col, "Choose a realm to meet its gods", 16, Color(1, 1, 1, 0.75), 0.0, HORIZONTAL_ALIGNMENT_CENTER)
+	var columns := 2 if Ui.is_narrow() else 4
+	var w := minf(230.0 * _k(), (_room() - (columns - 1) * GAP) / columns)
+	var h := w * (0.56 if columns == 2 else 0.48)
+	var grid := GridContainer.new()
+	grid.columns = columns
+	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	grid.add_theme_constant_override("h_separation", int(GAP))
+	grid.add_theme_constant_override("v_separation", int(GAP))
+	_col.add_child(grid)
+	for p in GodCatalog.PANTHEONS:
+		_realm_tile(grid, p, Vector2(w, h))
+	_buttons(false)
+
+
+func _realm_tile(parent: Control, p: Dictionary, tile: Vector2) -> void:
 	var b := Button.new()
-	b.toggle_mode = true
-	b.button_group = group
+	parent.add_child(b)  # first: the labels measure their text with the theme's font
+	b.custom_minimum_size = tile
 	b.focus_mode = Control.FOCUS_NONE
-	b.button_pressed = p["id"] == GameSettings.pantheon
 	b.tooltip_text = p["realm"]
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.offset_left = 8.0
-	box.offset_right = -8.0
-	box.offset_top = 9.0
-	box.offset_bottom = -6.0
+	var box := _inside(b, 8.0)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 0)
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.add_child(box)
 	var die := TextureRect.new()
 	die.texture = DiceArt.face(p["dice"], 1)
+	die.custom_minimum_size = Vector2.ONE * tile.y * 0.4
 	die.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	die.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	die.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	die.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(die)
-	var name_label := Label.new()
-	name_label.text = p["name"]
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(name_label)
-	Ui.hover_effect(b, "toggle")
-	Ui.mark_choice(b)
-	b.toggled.connect(func(on: bool) -> void:
-		if on and _pantheon != p["id"]:
-			_show_pantheon(p["id"], ""))
-	b.tree_entered.connect(func() -> void:
-		Ui.on_resize(b, func() -> void:
-			var k := UiTheme.ui_scale()
-			b.custom_minimum_size = TAB * k
-			die.custom_minimum_size = Vector2(34, 34) * k
-			Ui.fit_font(name_label, roundi(15.0 * k), TAB.x * k - 16.0, 10)), CONNECT_ONE_SHOT)
-	return b
+	var realm := GodLore.realm(p["id"])
+	var name_label := _label(box, p["name"], 18, Color.WHITE)
+	Ui.fit_font(name_label, roundi(18.0 * _k()), tile.x - 20.0, 11)
+	var sub := _label(box, str(realm.get("subtitle", "")), 13, Color(1, 1, 1, 0.65))
+	Ui.fit_font(sub, roundi(13.0 * _k()), tile.x - 20.0, 9)
+	Ui.hover_effect(b)
+	b.pressed.connect(func() -> void:
+		_pantheon = p["id"]
+		_show("gods"))
 
 
-## Shows a pantheon in its realm's look, with `god_id` chosen (or its first god).
-func _show_pantheon(pantheon_id: String, god_id: String) -> void:
-	_pantheon = pantheon_id
-	GameSettings.pantheon = pantheon_id  # only the look; put back on leaving unless "Play with"
-	Ui.retheme(self, _backdrop)
-	var realm := GodLore.realm(pantheon_id)
-	_realm_line.text = "%s · %s" % [realm.get("name", GodCatalog.pantheon(pantheon_id)["name"]), realm.get("subtitle", "")]
-	_realm_line.add_theme_color_override("font_color", UiTheme.current_palette()["accent"])
-	_about.text = str(realm.get("about", ""))
-	if GodCatalog.god(god_id).get("pantheon", "") != pantheon_id:
-		god_id = GodCatalog.gods_of(pantheon_id, GodCatalog.PRIMARY)[0]["id"]
-	for c in _list.get_children():
-		c.queue_free()
-	var group := ButtonGroup.new()
+# ───────────────────────── page 2: a realm and its gods ─────────────────────────
+
+func _build_gods() -> void:
+	_theme()
+	var accent: Color = UiTheme.current_palette()["accent"]
+	var realm := GodLore.realm(_pantheon)
+	_title(str(realm.get("name", GodCatalog.pantheon(_pantheon)["name"])))
+	_text(_col, str(realm.get("subtitle", "")), 18, accent, 0.0, HORIZONTAL_ALIGNMENT_CENTER)
+	_text(_col, str(realm.get("about", "")), 15, Color(1, 1, 1, 0.85), _room(), HORIZONTAL_ALIGNMENT_CENTER)
+	# The primary and the secondary gods side by side, or one row above the other on a narrow screen.
+	var rows := BoxContainer.new()
+	rows.vertical = Ui.is_narrow()
+	rows.alignment = BoxContainer.ALIGNMENT_CENTER
+	rows.add_theme_constant_override("separation", 8 if rows.vertical else 28)
+	_col.add_child(rows)
+	var width := _room() if rows.vertical else (_room() - 28.0) / 2.0
+	var w := minf(150.0 * _k(), (width - 2.0 * GAP) / 3.0)
 	for role in [GodCatalog.PRIMARY, GodCatalog.SECONDARY]:
-		var heading := Label.new()
-		heading.text = "Primary gods — a blessing without a price" if role == GodCatalog.PRIMARY \
-			else "Secondary gods — great power, at a price"
-		heading.add_theme_color_override("font_color", UiTheme.current_palette()["accent"])
-		_list.add_child(heading)
-		Ui.scaled_font(heading, 15)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", LIST_GAP)
-		_list.add_child(row)
-		for g in GodCatalog.gods_of(pantheon_id, role):
-			row.add_child(_god_button(g, group, g["id"] == god_id))
-	_show_god(god_id)
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 4)
+		rows.add_child(box)
+		var heading := _label(box, "Primary gods — a blessing without a price" if role == GodCatalog.PRIMARY \
+			else "Secondary gods — great power, at a price", 15, accent)
+		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		Ui.fit_font(heading, roundi(15.0 * _k()), 3.0 * w + 2.0 * GAP, 11)
+		var tiles := HBoxContainer.new()
+		tiles.alignment = BoxContainer.ALIGNMENT_CENTER
+		tiles.add_theme_constant_override("separation", int(GAP))
+		box.add_child(tiles)
+		for g in GodCatalog.gods_of(_pantheon, role):
+			_god_tile(tiles, g, w)
+	_buttons(false)
 
 
-func _god_button(g: Dictionary, group: ButtonGroup, pressed: bool) -> Button:
+func _god_tile(parent: Control, g: Dictionary, w: float) -> void:
 	var b := Button.new()
-	b.toggle_mode = true
-	b.button_group = group
+	parent.add_child(b)
+	b.custom_minimum_size = Vector2(w, w * 1.15)
 	b.focus_mode = Control.FOCUS_NONE
-	b.button_pressed = pressed
 	b.tooltip_text = "%s, %s" % [g["name"], g["title"]]
+	var box := _inside(b, 9.0)
+	var pic := _portrait(g["id"])
+	pic.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(pic)
+	var name_label := _label(box, g["name"], 15, Color.WHITE)
+	Ui.fit_font(name_label, roundi(15.0 * _k()), w - 18.0, 10)
+	Ui.hover_effect(b)
+	b.pressed.connect(func() -> void:
+		_god = g["id"]
+		_show("god"))
+
+
+# ───────────────────────── page 3: a god ─────────────────────────
+
+func _build_god() -> void:
+	var g := GodCatalog.god(_god)
+	var lore := GodLore.god(_god)
+	var accent: Color = UiTheme.current_palette()["accent"]
+	_title(g["name"])
+	var primary: bool = g["role"] == GodCatalog.PRIMARY
+	_text(_col, "%s · %s god" % [g["title"], "Primary" if primary else "Secondary"], 16, accent, 0.0,
+		HORIZONTAL_ALIGNMENT_CENTER)
+	var room := _room()
+	var narrow := Ui.is_narrow()
+	# The portrait beside the powers on a narrow screen, with the story under both; elsewhere the
+	# portrait beside everything.
+	var side := minf(room * 0.34, 130.0 * _k()) if narrow else minf(room * 0.3, 230.0 * _k())
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 14)
+	_col.add_child(body)
+	var pic := _portrait(_god)
+	pic.custom_minimum_size = Vector2(side, side * (1.0 if narrow else 1.25))
+	pic.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	body.add_child(pic)
+	var text_w := room - side - 14.0
+	var facts := VBoxContainer.new()
+	facts.add_theme_constant_override("separation", 4)
+	body.add_child(facts)
+	_text(facts, "%s: %s" % [g["boon_name"], g["boon_text"]], 15, Color(0.75, 1.0, 0.75), text_w)
+	if g.has("bane_name"):
+		_text(facts, "%s: %s" % [g["bane_name"], g["bane_text"]], 15, Color(1.0, 0.65, 0.6), text_w)
+	var story := facts if not narrow else _col
+	var story_w := text_w if not narrow else room
+	if not narrow:
+		facts.add_theme_constant_override("separation", 8)
+	_text(story, str(lore.get("lore", "")), 16, Color.WHITE, story_w)
+	if str(lore.get("did_you_know", "")) != "":
+		_text(story, "Did you know? " + str(lore["did_you_know"]), 15, Color(1, 1, 1, 0.75), story_w)
+	_buttons(true)
+
+
+# ───────────────────────── parts ─────────────────────────
+
+## Back, and on the god's page "Play with <god>".
+func _buttons(play: bool) -> void:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 28)
+	_col.add_child(row)
+	var back := IconButton.new(IconButton.Icon.BACK, false, "Back")
+	back.pressed.connect(go_back)
+	row.add_child(back)
+	if play:
+		var b := Button.new()
+		b.text = "Play with %s" % GodCatalog.god(_god)["name"]
+		b.custom_minimum_size = Vector2(200, 44)
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.tooltip_text = "Start a New War with this pantheon and this god."
+		b.pressed.connect(_play_with)
+		Ui.hover_effect(b)
+		row.add_child(b)
+
+
+func _title(text: String) -> void:
+	Ui.title(_col, text)
+	if _fit < 1.0:  # the title shrinks with the page
+		var l := _col.get_child(_col.get_child_count() - 1) as Label
+		l.add_theme_font_size_override("font_size", roundi(l.get_theme_font_size("font_size") * maxf(_fit, 0.8)))
+
+
+## A box inside a button, clear of its frame.
+func _inside(b: Button, margin: float) -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.offset_left = 9.0
-	box.offset_right = -9.0
-	box.offset_top = 9.0
-	box.offset_bottom = -9.0
+	box.offset_left = margin
+	box.offset_right = -margin
+	box.offset_top = margin
+	box.offset_bottom = -margin + 2.0
 	box.add_theme_constant_override("separation", 1)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(box)
-	var pic := TextureRect.new()
-	var path := GodCatalog.portrait_path(g["id"])
-	pic.texture = load(path) if ResourceLoader.exists(path) else null
-	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	pic.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(pic)
-	var name_label := Label.new()
-	name_label.text = g["name"]
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(name_label)
-	Ui.hover_effect(b, "toggle")
-	Ui.mark_choice(b)
-	b.toggled.connect(func(on: bool) -> void:
-		if on:
-			_show_god(g["id"]))
-	b.tree_entered.connect(func() -> void:
-		Ui.on_resize(b, func() -> void:
-			var k := UiTheme.ui_scale()
-			var w := THUMB * k + 18.0
-			b.custom_minimum_size = Vector2(w, THUMB * k + 26.0 * k + 22.0)
-			Ui.fit_font(name_label, roundi(15.0 * k), w - 18.0, 10)), CONNECT_ONE_SHOT)
-	return b
+	return box
 
 
-func _show_god(god_id: String) -> void:
-	_god = god_id
-	var g := GodCatalog.god(god_id)
-	var lore := GodLore.god(god_id)
-	for c in _detail.get_children():
-		c.queue_free()
-	for c in _lore_scroll.get_children():
-		c.queue_free()
-	_play.text = "Play with %s" % g["name"]
-
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 14)
-	_detail.add_child(head)
+func _portrait(god_id: String) -> TextureRect:
 	var pic := TextureRect.new()
 	var path := GodCatalog.portrait_path(god_id)
 	pic.texture = load(path) if ResourceLoader.exists(path) else null
 	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	head.add_child(pic)
-	Ui.on_resize(pic, func() -> void: pic.custom_minimum_size = Vector2.ONE * PORTRAIT * UiTheme.ui_scale())
-	var facts := VBoxContainer.new()
-	facts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	facts.add_theme_constant_override("separation", 4)
-	head.add_child(facts)
-	var name_label := _text(facts, g["name"], 30)
-	name_label.theme_type_variation = "TitleLabel"  # the realm's title font
-	var primary: bool = g["role"] == GodCatalog.PRIMARY
-	_text(facts, "%s · %s god" % [g["title"], "Primary" if primary else "Secondary"], 15, Color(1, 1, 1, 0.75))
-	_text(facts, "%s: %s" % [g["boon_name"], g["boon_text"]], 15, Color(0.75, 1.0, 0.75))
-	if g.has("bane_name"):
-		_text(facts, "%s: %s" % [g["bane_name"], g["bane_text"]], 15, Color(1.0, 0.65, 0.6))
-
-	var story := VBoxContainer.new()
-	story.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	story.add_theme_constant_override("separation", 8)
-	_lore_scroll.add_child(story)
-	_text(story, str(lore.get("lore", "")), 16)
-	if str(lore.get("did_you_know", "")) != "":
-		_text(story, "Did you know? " + str(lore["did_you_know"]), 15, Color(1, 1, 1, 0.8))
-	_lore_scroll.scroll_vertical = 0
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return pic
 
 
-func _text(parent: Control, t: String, font_size: int, color: Color = Color.WHITE) -> Label:
+## A one-line label (sized by the caller).
+func _label(parent: Control, t: String, font_size: int, color: Color) -> Label:
 	var l := Label.new()
 	l.text = t
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_size_override("font_size", roundi(font_size * _k()))
 	if color != Color.WHITE:
 		l.add_theme_color_override("font_color", color)
 	parent.add_child(l)
-	Ui.scaled_font(l, font_size)
+	return l
+
+
+## Text that wraps at `width` (0: one line, or wrapped to the panel if longer).
+func _text(parent: Control, t: String, font_size: int, color: Color, width: float,
+		align := HORIZONTAL_ALIGNMENT_LEFT) -> Label:
+	var l := Label.new()
+	l.text = t
+	l.horizontal_alignment = align
+	l.add_theme_font_size_override("font_size", roundi(font_size * _k()))
+	if color != Color.WHITE:
+		l.add_theme_color_override("font_color", color)
+	parent.add_child(l)
+	if width > 0.0:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = width
+	else:
+		Ui.fit_font(l, roundi(font_size * _k()), _room(), 11)
 	return l

@@ -31,11 +31,13 @@ static func retheme(root: Control, backdrop: MenuBackdrop) -> void:
 ## Adds a centered framed panel with a vertical column to `parent` and returns the column.
 static func centered_column(parent: Control, separation: int = 12) -> VBoxContainer:
 	# Inside a scroll area: when the window or screen is smaller than the panel, it can be scrolled
-	# (by dragging on a touch screen) instead of being cut off.
+	# (by dragging on a touch screen) instead of being cut off. The screens are laid out to fit a phone,
+	# so there it never shows scroll bars (a drag still scrolls if a screen does not quite fit).
 	var scroll := ScrollContainer.new()
 	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	var mode := ScrollContainer.SCROLL_MODE_SHOW_NEVER if AppWindow.is_mobile() else ScrollContainer.SCROLL_MODE_AUTO
+	scroll.horizontal_scroll_mode = mode
+	scroll.vertical_scroll_mode = mode
 	parent.add_child(scroll)
 	on_resize(scroll, func() -> void: apply_safe_area(scroll))  # the notch moves when the phone is rotated
 	var center := CenterContainer.new()
