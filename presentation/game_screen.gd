@@ -116,6 +116,7 @@ func _build_ui() -> void:
 		_clock = _layout.add_text(13, 0.9)
 	_battle = BattlePanel.new()  # over the whole screen, above the layout
 	add_child(_battle)
+	Looks.warm_towers(state.players.map(func(p: MatchState.PlayerState) -> String: return p.pantheon))
 	var me := state.players[human]
 	_gods_line.text = "%s — %s   ·   %s — %s" % [GodCatalog.god(me.primary)["name"], GodCatalog.god(me.primary)["boon_name"],
 		GodCatalog.god(me.secondary)["name"], GodCatalog.god(me.secondary)["boon_name"]]

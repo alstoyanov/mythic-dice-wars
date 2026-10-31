@@ -80,8 +80,24 @@ const TOWER_LAYOUT := {"front": true, "floor": 0.42, "reach": 0.33, "tray_width"
 
 ## The dice tower of a pantheon for battles: {tower, tray, tray_front (Texture2D), layout (TOWER_LAYOUT
 ## with this tower's values)}, or the first pantheon that has one while the others are still being made;
-## {} if none exists.
+## {} if none exists. Loaded once and kept: decoding the pictures when a battle opens made it stutter
+## on a phone (warm_towers loads a war's towers while it starts).
 static func tower(pantheon: String) -> Dictionary:
+	if not _towers.has(pantheon):
+		_towers[pantheon] = _load_tower(pantheon)
+	return _towers[pantheon]
+
+
+## Loads the towers of these pantheons now (before the first battle needs them).
+static func warm_towers(pantheons: Array) -> void:
+	for p: String in pantheons:
+		tower(p)
+
+
+static var _towers: Dictionary = {}
+
+
+static func _load_tower(pantheon: String) -> Dictionary:
 	for id in [pantheon] + GodCatalog.PANTHEONS.map(func(p: Dictionary) -> String: return p["id"]):
 		var dir := "res://assets/towers/%s/" % id
 		if ResourceLoader.exists(dir + "tower.png") and ResourceLoader.exists(dir + "tray.png"):
