@@ -10,12 +10,20 @@ extends Control
 ## lists the art that will replace the flat colours). Shows what it was last told (refresh()), not
 ## the live MatchState, so the game screen decides when a battle's outcome appears.
 ##
-## Fog of war (MatchState.fog): a territory the viewer cannot see is drawn as drifting grey mist,
+## Fog of war (MatchState.fog): a territory the viewer cannot see is drawn as grey mist,
 ## without its owner's colour, dice, pennant or effects (is_seen).
 ##
 ## Input: click / tap a territory (territory_clicked); mouse wheel, pinch or trackpad to zoom; drag to
 ## pan; right click to cancel. When zoomed out (or for a huge stack) a stack shrinks to one die and a
 ## number; hovering or selecting a territory shows its full tower again.
+##
+## Drawing is in three layers, so a phone does not redraw the whole island every frame: the land (one
+## mesh, built once per war: the territories take their colour from a palette of one pixel each, so a
+## conquest changes a pixel, not the mesh; zooming only moves it; the selection, the targets and the
+## hover are a small mesh of their own over it), the pieces on it (the arrow, and the pennants, dice and numbers as one mesh drawn from DiceArt.atlas), and
+## the effects (flashes, dust, numbers rising; drawn only while one plays). Nothing moves while nothing
+## happens, and the map is a handful of draw calls (the Compatibility renderer does not batch polygons:
+## drawn one by one, the map was thousands). queue_redraw() on this control rebuilds the land and pieces.
 
 signal territory_clicked(territory: int)
 signal cancelled
@@ -69,12 +77,44 @@ var _pressing: bool = false
 var _dragging: bool = false
 var _touches: Dictionary = {}  ## touch index -> position
 var _pinch_dist: float = 0.0
+var _land: _Layer
+var _pieces: _Layer
+var _fx: _Layer
+var _fx_shown := false  ## the effects layer has something drawn (it must be cleared once they end)
+var _land_mesh: ArrayMesh  ## the island, in world units (MeshBuilder), built once
+var _land_dirty := true
+var _palette_img: Image  ## one pixel per territory: its ground colour (and a last white one)
+var _palette: ImageTexture
+var _marks_mesh: ArrayMesh  ## the selection (raised, outlined in gold), the targets and the hover
+## Per cell (in _order): the territory, and its edges to other territories as [corner, other territory].
+var _cell_edges: Array = []
+var _pieces_mesh: ArrayMesh  ## pennants, dice and number discs, on screen (kept while drawn)
+var _fx_mesh: ArrayMesh  ## the flashes
+
+
+## A layer of the map: a control over the whole view that draws with one of the view's functions.
+class _Layer extends Control:
+	var paint: Callable
+
+	func _init(p: Callable) -> void:
+		paint = p
+		set_anchors_preset(Control.PRESET_FULL_RECT)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		paint.call(self)
 
 
 func _init() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_land = _Layer.new(_paint_land)
+	_land.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # the palette: one exact colour per territory
+	_pieces = _Layer.new(_paint_pieces)
+	_fx = _Layer.new(_paint_fx)
+	for layer in [_land, _pieces, _fx]:
+		add_child(layer)
 
 
 func setup(match_state: MatchState, realm_terrain: Dictionary) -> void:
@@ -95,6 +135,16 @@ func setup(match_state: MatchState, realm_terrain: Dictionary) -> void:
 		var pa := _cell_center(a)
 		var pb := _cell_center(b)
 		return pa.y < pb.y or (pa.y == pb.y and pa.x < pb.x))
+	_cell_edges.clear()
+	for c in _order:
+		var t := realm.territory_at(c)
+		var around := realm.cell_neighbors(c)
+		var edges: Array = []
+		for i in _shape.size():
+			var other := realm.territory_at(around[_edge_dir[i]])
+			if other != t:
+				edges.append([i, other])
+		_cell_edges.append([t, edges])
 	var half := Vector2.ZERO
 	for v in _shape:
 		half = Vector2(maxf(half.x, absf(v.x)), maxf(half.y, absf(v.y)))
@@ -115,6 +165,7 @@ func refresh() -> void:
 	owners = state.owners.duplicate()
 	dice = state.dice.duplicate()
 	_seen = state.visible_to(viewer)
+	_update_palette()
 	_capitals.clear()
 	for p in state.alive_players():
 		var best := -1
@@ -180,7 +231,8 @@ func _update_transform() -> void:
 	var s := fit * _zoom
 	var origin := size / 2.0 - _bounds.get_center() * s + _pan
 	_xf = Transform2D(0.0, Vector2(s, s), 0.0, origin)
-	queue_redraw()
+	_land.queue_redraw()  # the same land mesh, moved
+	_pieces.queue_redraw()
 
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
@@ -239,6 +291,7 @@ func play_fx(fx_name: String, t: int, life: float = 0.7, size: float = 48.0, ris
 			"name": fx_name, "seed": randi()})
 
 
+## Only the effects move: their layer is redrawn while one plays (and once more to clear it).
 func _process(delta: float) -> void:
 	_time += delta
 	for list in [_flashes, _floaters, _effects]:
@@ -246,7 +299,10 @@ func _process(delta: float) -> void:
 			list[i]["age"] += delta
 			if list[i]["age"] >= list[i]["life"]:
 				list.remove_at(i)
-	queue_redraw()
+	var busy := not (_flashes.is_empty() and _floaters.is_empty() and _effects.is_empty())
+	if busy or _fx_shown:
+		_fx.queue_redraw()
+		_fx_shown = busy
 
 
 # --- Input --------------------------------------------------------------------------------------
@@ -329,74 +385,148 @@ func _owner_color(t: int) -> Color:
 	return (terrain["top"] as Color).lerp(Looks.player_color(state.players[owners[t]].color_index), 0.6)
 
 
-## What is laid over a territory's ground now: selection, attack targets, hover, flashes (alpha 0 = none).
+## What is laid over a territory's ground: selection, attack targets, hover (alpha 0 = none). Flashes
+## are drawn on the effects layer.
 func _overlay(t: int) -> Color:
-	var col := Color(1, 1, 1, 0)
 	if t == selected:
-		col = Color(1, 1, 1, 0.3)
-	elif targets.has(t):
-		col = Color(target_color, 0.25 + 0.15 * sin(_time * 6.0))
-	elif t == hover and interactive:
-		col = Color(1, 1, 1, 0.14)
-	for f in _flashes:
-		if f["t"] == t:
-			var k: float = 1.0 - f["age"] / f["life"]
-			col = Color(f["color"], maxf(col.a, k * 0.75))
-	return col
+		return Color(1, 1, 1, 0.3)
+	if targets.has(t):
+		return Color(target_color, 0.32)
+	if t == hover and interactive:
+		return Color(1, 1, 1, 0.14)
+	return Color(1, 1, 1, 0)
 
 
+## Asked to redraw (by refresh, the game screen, a selection): the marks and the pieces are rebuilt (and
+## the land, after a refresh).
 func _draw() -> void:
 	if realm == null:
 		return
-	draw_set_transform_matrix(_xf)
-	var cliff: Color = terrain["cliff"]
+	_land.queue_redraw()
+	_pieces.queue_redraw()
+
+
+## The island: its shadow, every cell's cliffs and top in its owner's colour, the edges (one mesh,
+## rebuilt after a refresh); over it the marks (rebuilt every time: a few cells).
+func _paint_land(ci: CanvasItem) -> void:
+	if realm == null:
+		return
+	if _land_dirty or _land_mesh == null:
+		_land_mesh = _build_land()
+		_land_dirty = false
+	_marks_mesh = _build_marks()
+	ci.draw_set_transform_matrix(_xf)
+	if _land_mesh != null:
+		ci.draw_mesh(_land_mesh, _palette)
+	if _marks_mesh != null:
+		ci.draw_mesh(_marks_mesh, null)
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## The cells' raise (elevation; the selected territory is drawn raised more by the marks).
+func _ground_lift(t: int) -> float:
+	return realm.territories[t].elevation * LIFT
+
+
+## The colours of the territories' ground, as the palette the land mesh is drawn with.
+func _update_palette() -> void:
+	var n := realm.count()
+	if _palette_img == null:
+		_palette_img = Image.create(n + 1, 1, false, Image.FORMAT_RGBA8)
+		_palette_img.set_pixel(n, 0, Color.WHITE)
+	for t in n:
+		_palette_img.set_pixel(t, 0, _owner_color(t))
+	if _palette == null:
+		_palette = ImageTexture.create_from_image(_palette_img)
+	else:
+		_palette.update(_palette_img)
+	_land.queue_redraw()
+
+
+## The palette pixel of territory `t` (realm.count() = white), as a texture coordinate.
+func _palette_uv(t: int) -> Vector2:
+	return Vector2((t + 0.5) / (realm.count() + 1.0), 0.5)
+
+
+func _build_land() -> ArrayMesh:
+	var mb := MeshBuilder.new()
+	mb.uv = _palette_uv(realm.count())
 	var shadow := Color(0, 0, 0, 0.28)
-	var n_corners := _shape.size()
 	var shadow_shape := PackedVector2Array()
 	for v in _shape:
 		shadow_shape.append(v * 1.08 + Vector2(4.0, BASE + 10.0))
 	for c in _order:  # the island's shadow on the sea below
-		draw_colored_polygon(_offset(shadow_shape, _cell_center(c)), shadow)
-	var dark := cliff.darkened(0.45)
-	for c in _order:
-		var t := realm.territory_at(c)
-		var lift := _lift(t)
-		var center := _cell_center(c) - Vector2(0.0, lift)
-		var top_pts := _offset(_shape, center)
-		var depth := Vector2(0.0, lift + BASE)
-		for face in _front:
-			var a: Vector2 = top_pts[face[0]]
-			var b: Vector2 = top_pts[face[1]]
-			var k: float = face[2]
-			var upper := cliff.darkened(1.0 - k)
-			var lower := dark.darkened((1.0 - k) * 0.6)
-			draw_polygon(PackedVector2Array([a, b, b + depth, a + depth]), PackedColorArray([upper, upper, lower, lower]))
-		var top := _owner_color(t)
-		var j: float = _jitter[c]
-		if not is_seen(t):  # slow drifting banks of mist
-			j += 0.05 * sin(_time * 0.7 + c.x * 0.45 + c.y * 0.3) + 0.03 * sin(_time * 1.1 - c.x * 0.2 + c.y * 0.6)
-		draw_colored_polygon(top_pts, Color(top.r + j, top.g + j, top.b + j, 1.0))
-		var over := _overlay(t)
-		if over.a > 0.0:
-			draw_colored_polygon(top_pts, over)
-		# Edges: a dark line between territories, a light rim along the coast, gold around the selection.
-		var around := realm.cell_neighbors(c)
-		for i in n_corners:
-			var other := realm.territory_at(around[_edge_dir[i]])
-			if other == t:
-				continue
-			var a: Vector2 = top_pts[i]
-			var b: Vector2 = top_pts[(i + 1) % n_corners]
-			if t == selected or (other == selected and other >= 0):
-				draw_line(a, b, Color(1.0, 0.86, 0.4), 2.2, true)
-			elif other < 0:
-				draw_line(a, b, Color(1, 1, 1, 0.35), 1.0, true)
+		mb.polygon(_offset(shadow_shape, _cell_center(c)), shadow)
+	var white := _palette_uv(realm.count())
+	for i in _order.size():
+		var c := _order[i]
+		var t: int = _cell_edges[i][0]
+		_add_cell(mb, c, t, _ground_lift(t), Color.WHITE, _palette_uv(t))
+		mb.uv = white
+		var top_pts := _offset(_shape, _cell_center(c) - Vector2(0.0, _ground_lift(t)))
+		# Edges: a dark line between territories, a light rim along the coast.
+		for edge in _cell_edges[i][1]:
+			var a: Vector2 = top_pts[edge[0]]
+			var b: Vector2 = top_pts[(edge[0] + 1) % top_pts.size()]
+			if edge[1] < 0:
+				mb.line(a, b, Color(1, 1, 1, 0.35), 1.0)
 			else:
-				draw_line(a, b, Color(0.08, 0.06, 0.05, 0.75), 1.3, true)
-	_draw_arrow()
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-	_draw_stacks()
-	_draw_floaters()
+				mb.line(a, b, Color(0.08, 0.06, 0.05, 0.75), 1.3)
+	return mb.build()
+
+
+## One cell: its cliffs facing the camera and its top. `top_uv`: the top's colour from the palette
+## (the land mesh); else `top` is the colour itself.
+func _add_cell(mb: MeshBuilder, c: Vector2i, t: int, lift: float, top: Color, top_uv := Vector2(-1.0, -1.0)) -> void:
+	var cliff: Color = terrain["cliff"]
+	var dark := cliff.darkened(0.45)
+	var top_pts := _offset(_shape, _cell_center(c) - Vector2(0.0, lift))
+	var depth := Vector2(0.0, lift + BASE)
+	for face in _front:
+		var a: Vector2 = top_pts[face[0]]
+		var b: Vector2 = top_pts[face[1]]
+		var k: float = face[2]
+		var upper := cliff.darkened(1.0 - k)
+		var lower := dark.darkened((1.0 - k) * 0.6)
+		mb.quad(a, b, b + depth, a + depth, upper, upper, lower, lower)
+	var j: float = _jitter[c]
+	if top_uv.x >= 0.0:
+		mb.uv = top_uv
+		var k := 1.0 + j * 1.6  # the cell's brightness, multiplied with its territory's colour
+		mb.polygon(top_pts, Color(k, k, k, 1.0))
+	else:
+		mb.polygon(top_pts, Color(top.r + j, top.g + j, top.b + j, 1.0))
+
+
+## Over the land: the targets and the hovered territory tinted, and the selected territory raised, lit
+## and outlined in gold.
+func _build_marks() -> ArrayMesh:
+	var marked := {}
+	for t in targets:
+		marked[t] = true
+	if hover >= 0 and interactive:
+		marked[hover] = true
+	if selected >= 0:
+		marked[selected] = true
+	if marked.is_empty():
+		return null
+	var mb := MeshBuilder.new()
+	for i in _order.size():
+		var t: int = _cell_edges[i][0]
+		if not marked.has(t):
+			continue
+		var c := _order[i]
+		var over := _overlay(t)
+		var lift := _lift(t)
+		if t == selected:
+			_add_cell(mb, c, t, lift, _owner_color(t))
+		var top_pts := _offset(_shape, _cell_center(c) - Vector2(0.0, lift))
+		if over.a > 0.0:
+			mb.polygon(top_pts, over)
+		if t == selected:
+			for edge in _cell_edges[i][1]:
+				mb.line(top_pts[edge[0]], top_pts[(edge[0] + 1) % top_pts.size()], Color(1.0, 0.86, 0.4), 2.2)
+	return mb.build()
 
 
 static func _offset(points: PackedVector2Array, by: Vector2) -> PackedVector2Array:
@@ -407,7 +537,17 @@ static func _offset(points: PackedVector2Array, by: Vector2) -> PackedVector2Arr
 	return out
 
 
-func _draw_arrow() -> void:
+## On the land: the attack arrow, the pennants, the dice and their numbers, the wards.
+func _paint_pieces(ci: CanvasItem) -> void:
+	if realm == null:
+		return
+	ci.draw_set_transform_matrix(_xf)
+	_draw_arrow(ci)
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+	_draw_stacks(ci)
+
+
+func _draw_arrow(ci: CanvasItem) -> void:
 	if arrow.x < 0:
 		return
 	var a := territory_anchor(arrow.x)
@@ -418,67 +558,75 @@ func _draw_arrow() -> void:
 		var k := i / 16.0
 		pts.append(a.lerp(mid, k).lerp(mid.lerp(b, k), k))
 	var col := Color(1.0, 0.9, 0.55, 0.95)
-	draw_polyline(pts, Color(0, 0, 0, 0.5), 4.0, true)
-	draw_polyline(pts, col, 2.2, true)
+	ci.draw_polyline(pts, Color(0, 0, 0, 0.5), 4.0, true)
+	ci.draw_polyline(pts, col, 2.2, true)
 	var dir := (pts[16] - pts[14]).normalized()
 	var side := Vector2(-dir.y, dir.x)
-	draw_colored_polygon(PackedVector2Array([b, b - dir * 7.0 + side * 4.0, b - dir * 7.0 - side * 4.0]), col)
+	ci.draw_colored_polygon(PackedVector2Array([b, b - dir * 7.0 + side * 4.0, b - dir * 7.0 - side * 4.0]), col)
 
 
-## The pennants and dice, drawn on screen (so the numbers stay sharp at any zoom), back to front.
-func _draw_stacks() -> void:
+## The pennants, the dice and the discs of their numbers, drawn on screen (so the numbers stay sharp at
+## any zoom) as one mesh from DiceArt.atlas (one draw call), back to front; then the numbers' text.
+func _draw_stacks(ci: CanvasItem) -> void:
 	var scale := _xf.get_scale().x
 	var w := DIE * scale
 	var compact := w < COMPACT_BELOW
+	var screen := {}
+	for t in realm.count():
+		screen[t] = territory_screen_pos(t)
 	var order: Array = range(realm.count())
-	order.sort_custom(func(a: int, b: int) -> bool: return territory_screen_pos(a).y < territory_screen_pos(b).y)
-	var font := UiTheme.bold_font()
-	var capital_of := {}
+	order.sort_custom(func(a: int, b: int) -> bool: return screen[a].y < screen[b].y)
+	var mb := MeshBuilder.new()
+	mb.uv = DiceArt.white_uv()
 	for p in _capitals:
-		capital_of[_capitals[p]] = p
+		var t: int = _capitals[p]
+		if is_seen(t):
+			_add_pennant(mb, screen[t] + Vector2(-w * 0.95, w * 0.1), scale, Looks.player_color(state.players[p].color_index))
+	var counts: Array = []
 	for t: int in order:
 		if not is_seen(t):
 			continue
-		if capital_of.has(t):
-			_draw_pennant(territory_screen_pos(t) + Vector2(-w * 0.95, w * 0.1), scale, Looks.player_color(state.players[capital_of[t]].color_index))
-		var p := owners[t]
-		var player := state.players[p]
+		var player := state.players[owners[t]]
 		var skin: String = GodCatalog.pantheon(player.pantheon)["dice"]
-		var base := territory_screen_pos(t)
 		var full := not compact or t == hover or t == selected or t == arrow.x or t == arrow.y
 		var shown := dice[t] if full else 1
 		var tint := Color.WHITE.lerp(Looks.player_color(player.color_index), 0.18)
 		var cube_w := w if full else maxf(w, 9.0)
-		DiceArt.draw_stack(self, base, cube_w, shown, skin, tint, t * 97)
+		DiceArt.add_stack(mb, screen[t], cube_w, shown, skin, tint, t * 97)
 		if GameSettings.show_counts or not full or dice[t] > 4:
-			_draw_count(t, base, cube_w, font, Looks.player_color(player.color_index))
-	_draw_wards(scale)
-	_draw_effects(scale)
+			counts.append([t, cube_w])
+	mb.uv = DiceArt.white_uv()
+	for c in counts:
+		var t: int = c[0]
+		var at_r := _count_at(screen[t], c[1])
+		mb.circle(at_r[0], at_r[1] + 1.5, Color(0, 0, 0, 0.6))
+		mb.circle(at_r[0], at_r[1], Looks.player_color(state.players[owners[t]].color_index).darkened(0.25))
+	_pieces_mesh = mb.build()
+	if _pieces_mesh != null:
+		ci.draw_mesh(_pieces_mesh, DiceArt.atlas())
+	var font := UiTheme.bold_font()
+	for c in counts:
+		_draw_count_text(ci, c[0], screen[c[0]], c[1], font)
+	_draw_wards(ci, scale)
 
 
-## A small pennant in the player's colour on the heart of their largest region, waving.
-func _draw_pennant(foot: Vector2, scale: float, color: Color) -> void:
+## A small pennant in the player's colour on the heart of their largest region.
+func _add_pennant(mb: MeshBuilder, foot: Vector2, scale: float, color: Color) -> void:
 	var pole := 30.0 * scale
 	var top := foot - Vector2(0.0, pole)
-	draw_line(foot, top, Color(0.18, 0.12, 0.08), maxf(1.5, 1.6 * scale), true)
-	draw_circle(top, maxf(1.5, 1.4 * scale), Color(0.9, 0.75, 0.35))
+	mb.line(foot, top, Color(0.18, 0.12, 0.08), maxf(1.5, 1.6 * scale))
+	mb.circle(top, maxf(1.5, 1.4 * scale), Color(0.9, 0.75, 0.35), 8)
 	var length := 16.0 * scale
 	var height := 8.0 * scale
-	var upper := PackedVector2Array()
-	var lower := PackedVector2Array()
-	for i in 9:
-		var k := i / 8.0
-		var wave := sin(_time * 5.0 - k * 4.0) * 1.6 * scale * k
-		upper.append(top + Vector2(length * k, 1.0 * scale + wave))
-		lower.append(top + Vector2(length * k, 1.0 * scale + height * (1.0 - k * 0.85) + wave))
-	lower.reverse()
-	var shape := upper + lower
-	draw_colored_polygon(shape, color)
-	draw_polyline(shape + PackedVector2Array([shape[0]]), color.darkened(0.45), maxf(1.0, 0.8 * scale), true)
+	var shape := PackedVector2Array([top + Vector2(0.0, 1.0 * scale), top + Vector2(length * 0.5, 2.2 * scale),
+		top + Vector2(length, 1.6 * scale), top + Vector2(length, 1.0 * scale + height * 0.15 + 1.6 * scale),
+		top + Vector2(length * 0.5, 1.0 * scale + height * 0.58 + 1.2 * scale), top + Vector2(0.0, 1.0 * scale + height)])
+	mb.polygon(shape, color)
+	mb.polyline(shape + PackedVector2Array([shape[0]]), color.darkened(0.45), maxf(1.0, 0.8 * scale))
 
 
 ## A dome of light over each warded territory (the last frame of the ward effect), or a ring.
-func _draw_wards(scale: float) -> void:
+func _draw_wards(ci: CanvasItem, scale: float) -> void:
 	var sheet := Looks.fx("ward_dome")
 	for t in state.wards:
 		if state.wards[t]["player"] != owners[t] or not is_seen(t):
@@ -488,19 +636,56 @@ func _draw_wards(scale: float) -> void:
 		var n := Looks.fx_frames(sheet)
 		var side := 46.0 * scale
 		var c := territory_screen_pos(t) - Vector2(0.0, 12.0 * scale)
-		var pulse := 0.8 + 0.15 * sin(_time * 3.0)
 		var region := Rect2((n - 1) * sheet.get_height(), 0, sheet.get_height(), sheet.get_height())
 		var rect := Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side))
-		draw_texture_rect_region(sheet, rect, region, Color(1.3, 1.5, 1.8, pulse))
+		ci.draw_texture_rect_region(sheet, rect, region, Color(1.3, 1.5, 1.8, 0.85))
 		# a glowing rim where the dome meets the ground
 		var foot := territory_screen_pos(t) + Vector2(0.0, 2.0 * scale)
-		draw_set_transform(foot, 0.0, Vector2(1.0, 0.42))
-		draw_arc(Vector2.ZERO, side * 0.42, 0.0, TAU, 36, Color(0.7, 0.9, 1.0, 0.45 * pulse), 5.0 * scale, true)
-		draw_arc(Vector2.ZERO, side * 0.42, 0.0, TAU, 36, Color(0.9, 0.97, 1.0, 0.9 * pulse), 1.6 * scale, true)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		ci.draw_set_transform(foot, 0.0, Vector2(1.0, 0.42))
+		ci.draw_arc(Vector2.ZERO, side * 0.42, 0.0, TAU, 36, Color(0.7, 0.9, 1.0, 0.4), 5.0 * scale, true)
+		ci.draw_arc(Vector2.ZERO, side * 0.42, 0.0, TAU, 36, Color(0.9, 0.97, 1.0, 0.8), 1.6 * scale, true)
+		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-func _draw_effects(scale: float) -> void:
+func _count_at(base: Vector2, w: float) -> Array:
+	var r := clampf(w * 0.5, 7.0, 13.0)
+	return [base + Vector2(w * 0.75 + r * 0.4, -r * 0.2), r]
+
+
+func _draw_count_text(ci: CanvasItem, t: int, base: Vector2, w: float, font: Font) -> void:
+	var at_r := _count_at(base, w)
+	var at: Vector2 = at_r[0]
+	var r: float = at_r[1]
+	if state.wards.has(t) and state.wards[t]["player"] == owners[t] and Looks.fx("ward_dome") == null:
+		ci.draw_arc(at, r + 4.0, 0.0, TAU, 24, Color(0.75, 0.9, 1.0, 0.9), 2.0, true)
+	var text := str(dice[t])
+	var fs := int(r * 1.35)
+	var size_t := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	ci.draw_string(font, at + Vector2(-size_t.x / 2.0, fs * 0.36), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+
+
+## The effects: flashes over territories, effect sheets (dust, lightning, motes…) and rising numbers.
+func _paint_fx(ci: CanvasItem) -> void:
+	if realm == null:
+		return
+	if not _flashes.is_empty():
+		var mb := MeshBuilder.new()
+		for f in _flashes:
+			var t: int = f["t"]
+			var k: float = 1.0 - f["age"] / f["life"]
+			var col := Color(f["color"], k * 0.75)
+			var lift := _lift(t)
+			for c in realm.territories[t].cells:
+				mb.polygon(_offset(_shape, _cell_center(c) - Vector2(0.0, lift)), col)
+		_fx_mesh = mb.build()
+		ci.draw_set_transform_matrix(_xf)
+		ci.draw_mesh(_fx_mesh, null)
+		ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+	_draw_effects(ci, _xf.get_scale().x)
+	_draw_floaters(ci)
+
+
+func _draw_effects(ci: CanvasItem, scale: float) -> void:
 	for e in _effects:
 		var sheet: Texture2D = e["sheet"]
 		var n := Looks.fx_frames(sheet)
@@ -512,14 +697,14 @@ func _draw_effects(scale: float) -> void:
 			"dust":
 				tint = Color(1.9, 1.7, 1.4)  # the painted dust is dark: lift it to a sandy cloud
 			"lightning":
-				_draw_bolt(territory_screen_pos(e["t"]), side, e["age"] / e["life"], e["seed"], scale)
+				_draw_bolt(ci, territory_screen_pos(e["t"]), side, e["age"] / e["life"], e["seed"], scale)
 				tint = Color(1.6, 1.7, 2.0)
-		draw_texture_rect_region(sheet, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)),
+		ci.draw_texture_rect_region(sheet, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)),
 			Rect2(frame * sheet.get_height(), 0, sheet.get_height(), sheet.get_height()), tint)
 
 
 ## A jagged bolt from the sky onto `foot`, bright at first, flickering out (with the lightning sheet).
-func _draw_bolt(foot: Vector2, length: float, k: float, seed_value: int, scale: float) -> void:
+func _draw_bolt(ci: CanvasItem, foot: Vector2, length: float, k: float, seed_value: int, scale: float) -> void:
 	if k > 0.6 or (k > 0.25 and int(k * 40.0) % 3 == 0):
 		return
 	var rng := RandomNumberGenerator.new()
@@ -533,26 +718,13 @@ func _draw_bolt(foot: Vector2, length: float, k: float, seed_value: int, scale: 
 			p.x += rng.randf_range(-0.12, 0.12) * length
 		pts.append(p)
 	var fade := 1.0 - k / 0.6
-	draw_polyline(pts, Color(0.55, 0.75, 1.0, 0.35 * fade), 9.0 * scale, true)
-	draw_polyline(pts, Color(0.8, 0.9, 1.0, 0.8 * fade), 3.5 * scale, true)
-	draw_polyline(pts, Color(1, 1, 1, fade), 1.5 * scale, true)
-	draw_circle(foot, length * 0.18 * fade, Color(0.85, 0.92, 1.0, 0.35 * fade))
+	ci.draw_polyline(pts, Color(0.55, 0.75, 1.0, 0.35 * fade), 9.0 * scale, true)
+	ci.draw_polyline(pts, Color(0.8, 0.9, 1.0, 0.8 * fade), 3.5 * scale, true)
+	ci.draw_polyline(pts, Color(1, 1, 1, fade), 1.5 * scale, true)
+	ci.draw_circle(foot, length * 0.18 * fade, Color(0.85, 0.92, 1.0, 0.35 * fade))
 
 
-func _draw_count(t: int, base: Vector2, w: float, font: Font, color: Color) -> void:
-	var r := clampf(w * 0.5, 7.0, 13.0)
-	var at := base + Vector2(w * 0.75 + r * 0.4, -r * 0.2)
-	if state.wards.has(t) and state.wards[t]["player"] == owners[t] and Looks.fx("ward_dome") == null:
-		draw_arc(at, r + 4.0, 0.0, TAU, 24, Color(0.75, 0.9, 1.0, 0.9), 2.0, true)
-	draw_circle(at, r + 1.5, Color(0, 0, 0, 0.6))
-	draw_circle(at, r, color.darkened(0.25))
-	var text := str(dice[t])
-	var fs := int(r * 1.35)
-	var size_t := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-	draw_string(font, at + Vector2(-size_t.x / 2.0, fs * 0.36), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
-
-
-func _draw_floaters() -> void:
+func _draw_floaters(ci: CanvasItem) -> void:
 	var font := UiTheme.bold_font()
 	for f in _floaters:
 		var k: float = f["age"] / f["life"]
@@ -562,5 +734,5 @@ func _draw_floaters() -> void:
 		var fs := 22
 		var text: String = f["text"]
 		var sz := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		draw_string_outline(font, pos - Vector2(sz.x / 2.0, 0.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 5, Color(0, 0, 0, col.a * 0.8))
-		draw_string(font, pos - Vector2(sz.x / 2.0, 0.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+		ci.draw_string_outline(font, pos - Vector2(sz.x / 2.0, 0.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 5, Color(0, 0, 0, col.a * 0.8))
+		ci.draw_string(font, pos - Vector2(sz.x / 2.0, 0.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)

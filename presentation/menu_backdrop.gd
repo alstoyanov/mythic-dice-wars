@@ -23,6 +23,7 @@ var _tiled := false
 var _weather := ""
 var _drops: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
+var _weather_mesh: ArrayMesh  ## the drops (or tumbling dice) drawn now (kept while drawn)
 
 
 func _init() -> void:
@@ -135,12 +136,17 @@ func _draw() -> void:
 	if not animated:
 		return
 	var accent: Color = palette["accent"]
+	var mb := MeshBuilder.new()  # all the dice in one draw call
 	for t in _tiles:
-		var side: float = t["size"] * minf(size.x, size.y)
-		draw_set_transform(Vector2(t["x"] * size.x, t["y"] * size.y), t["rot"], Vector2.ONE)
-		draw_rect(Rect2(-side / 2.0, -side / 2.0, side, side), Color(accent, 0.07))
-		draw_rect(Rect2(-side / 2.0, -side / 2.0, side, side), Color(accent, 0.16), false, 2.0)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var half: float = t["size"] * minf(size.x, size.y) / 2.0
+		var at := Vector2(t["x"] * size.x, t["y"] * size.y)
+		var pts := PackedVector2Array()
+		for i in 5:
+			pts.append(at + Vector2.from_angle(t["rot"] + PI / 4.0 + i * PI / 2.0) * half * sqrt(2.0))
+		mb.polygon(pts.slice(0, 4), Color(accent, 0.07))
+		mb.polyline(pts, Color(accent, 0.16), 2.0)
+	_weather_mesh = mb.build()
+	draw_mesh(_weather_mesh, null)
 
 
 ## The picture covering the whole screen (cropped at the sides or top and bottom, never stretched),
@@ -160,8 +166,10 @@ func _draw_picture() -> void:
 			PackedColorArray([top, top, bottom, bottom]))
 
 
+## The weather, every drop in one mesh (one draw call; a phone would make one per drop).
 func _draw_weather() -> void:
 	var unit := minf(size.x, size.y) / 700.0  # sizes follow the screen
+	var mb := MeshBuilder.new()
 	for d in _drops:
 		var p := Vector2(d["x"] * size.x, d["y"] * size.y)
 		var k: float = d["size"]
@@ -169,11 +177,11 @@ func _draw_weather() -> void:
 			"haze", "dust":
 				var flicker := 0.55 + 0.45 * sin(d["phase"] * 1.3)
 				var warm := Color(1.0, 0.86, 0.6) if _weather == "haze" else Color(0.95, 0.9, 0.8)
-				draw_circle(p, (5.0 + 5.0 * k) * unit, Color(warm, 0.05 * flicker))
-				draw_circle(p, (1.2 + 1.6 * k) * unit, Color(warm, 0.55 * flicker))
+				mb.circle(p, (5.0 + 5.0 * k) * unit, Color(warm, 0.05 * flicker), 10)
+				mb.circle(p, (1.2 + 1.6 * k) * unit, Color(warm, 0.55 * flicker), 6)
 			"snow":
 				p.x += sin(d["phase"] * 0.9 + d["x"] * 9.0) * 10.0 * unit
-				draw_circle(p, (1.0 + 2.2 * k) * unit, Color(1, 1, 1, 0.45 + 0.4 * k))
+				mb.circle(p, (1.0 + 2.2 * k) * unit, Color(1, 1, 1, 0.45 + 0.4 * k), 6)
 			"petals", "leaves":  # swaying as it falls, turning so it flickers between face and edge
 				p.x += sin(d["phase"] * 0.7 + d["x"] * 7.0) * 18.0 * unit
 				var turn: float = d["phase"] * d["spin"]
@@ -181,14 +189,25 @@ func _draw_weather() -> void:
 				if _weather == "leaves":
 					col = Color(0.85, 0.45, 0.15).lerp(Color(0.95, 0.72, 0.3), d["tint"])
 					k *= 1.6
-				draw_set_transform(p, turn, Vector2(1.0, 0.35 + 0.65 * absf(sin(d["phase"] * 1.7 + d["tint"] * 6.0))))
-				draw_circle(Vector2.ZERO, (3.5 + 3.0 * k) * unit, Color(col, 0.75))
-				draw_circle(Vector2((1.5 + 1.2 * k) * unit, 0.0), (2.2 + 2.0 * k) * unit, Color(col, 0.75))
-				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+				var flat := 0.35 + 0.65 * absf(sin(d["phase"] * 1.7 + d["tint"] * 6.0))
+				var xf := Transform2D(turn, Vector2(1.0, flat), 0.0, p)
+				_ellipse(mb, xf, Vector2.ZERO, (3.5 + 3.0 * k) * unit, Color(col, 0.75))
+				_ellipse(mb, xf, Vector2((1.5 + 1.2 * k) * unit, 0.0), (2.2 + 2.0 * k) * unit, Color(col, 0.75))
 			"rain":
 				var along := Vector2(d["vx"], d["vy"]).normalized() * (16.0 + 18.0 * k) * unit
-				draw_line(p, p + along, Color(0.78, 0.84, 0.95, 0.22 + 0.2 * k), maxf(1.0, unit))
+				mb.line(p, p + along, Color(0.78, 0.84, 0.95, 0.22 + 0.2 * k), maxf(1.0, unit))
 			"sand":
 				p.y += sin(d["phase"] * 2.0 + d["x"] * 6.0) * 6.0 * unit
-				draw_line(p, p + Vector2((6.0 + 10.0 * k) * unit, 0.0), Color(0.95, 0.82, 0.6, 0.3 + 0.25 * k),
+				mb.line(p, p + Vector2((6.0 + 10.0 * k) * unit, 0.0), Color(0.95, 0.82, 0.6, 0.3 + 0.25 * k),
 					maxf(1.0, 1.5 * unit))
+	_weather_mesh = mb.build()
+	if _weather_mesh != null:
+		draw_mesh(_weather_mesh, null)
+
+
+## A circle seen through a transform (a petal turning).
+static func _ellipse(mb: MeshBuilder, xf: Transform2D, center: Vector2, radius: float, color: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 10:
+		pts.append(xf * (center + Vector2.from_angle(TAU * i / 10.0) * radius))
+	mb.polygon(pts, color)

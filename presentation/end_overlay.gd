@@ -16,6 +16,7 @@ var _rng := RandomNumberGenerator.new()
 var _banner: PanelContainer
 var _title: Label
 var _detail: Label
+var _mesh: ArrayMesh  ## the pieces drawn now (kept while drawn)
 
 
 func _init() -> void:
@@ -160,12 +161,19 @@ func _draw() -> void:
 			PackedColorArray([red, clear, clear, red]))
 		draw_polygon(PackedVector2Array([Vector2(size.x - edge, 0), Vector2(size.x, 0), size, Vector2(size.x - edge, size.y)]),
 			PackedColorArray([clear, red, red, clear]))
+	# Every piece in one mesh: one draw call (a phone would make one per piece).
+	var mb := MeshBuilder.new()
 	for p in _pieces:
 		if p["delay"] > 0.0:
 			continue
 		var fade := minf(p["life"] * 4.0, 1.0)
 		var col: Color = p["col"]
 		col.a = fade * (0.9 if _mode == "win" else 0.45)
-		draw_set_transform(p["pos"], p["rot"], Vector2.ONE)
-		draw_rect(Rect2(-p["w"] / 2.0, -p["h"] / 2.0, p["w"], p["h"]), col)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var rot: float = p["rot"]
+		var x: Vector2 = Vector2.from_angle(rot) * (p["w"] / 2.0)
+		var y: Vector2 = Vector2.from_angle(rot + PI / 2.0) * (p["h"] / 2.0)
+		var at: Vector2 = p["pos"]
+		mb.quad(at - x - y, at + x - y, at + x + y, at - x + y, col, col, col, col)
+	_mesh = mb.build()
+	if _mesh != null:
+		draw_mesh(_mesh, null)
