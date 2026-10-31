@@ -1,7 +1,7 @@
 extends Node
 ## Opens every screen and saves a picture of each (needs a window, not --headless):
 ##   godot --path . res://tests/screenshots.tscn -- --out=<folder> [--size=1280x800] [--pantheon=norse] [--grid=hex] [--fog=on|off]
-##     [--screens=new_war,god_book] (only these; a list without game_screen skips the war's pictures)
+##     [--screens=new_war,god_book] (only these; a list without game_screen skips the war's pictures) [--players=8]
 ## Also a smoke test: a script error on any screen shows in the output.
 
 const SCREENS := ["splash", "main_menu", "new_war", "god_select", "god_book", "account", "settings", "help", "game_screen"]
@@ -34,6 +34,9 @@ func _run() -> void:
 		elif arg.begins_with("--fog="):
 			GameSettings.ensure_loaded()
 			GameSettings.fog = arg.get_slice("=", 1) == "on"
+		elif arg.begins_with("--players="):
+			GameSettings.ensure_loaded()
+			GameSettings.players = int(arg.get_slice("=", 1))
 		elif arg.begins_with("--pantheon="):
 			GameSettings.ensure_loaded()
 			GameSettings.set_pantheon(arg.get_slice("=", 1))
@@ -71,6 +74,17 @@ func _run() -> void:
 			book._show("god")
 			await get_tree().create_timer(0.6).timeout
 			_save(out, "god_book_god" + suffix)
+		if screen == "game_screen":  # the players full-screen, and a rival's god opened from it
+			var war := get_tree().current_scene
+			war._show_players()
+			await get_tree().create_timer(0.6).timeout
+			_save(out, "game_players" + suffix)
+			war.add_child(GodOverlay.new(war.state.players[1].secondary))
+			await get_tree().create_timer(0.6).timeout
+			_save(out, "game_god" + suffix)
+			war.go_back()
+			war.go_back()
+			await get_tree().create_timer(0.3).timeout
 	# A battle in progress and a later state of the war: play a few computer turns.
 	var game := get_tree().current_scene
 	if game != null and game.get("state") != null:

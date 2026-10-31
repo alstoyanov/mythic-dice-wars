@@ -20,6 +20,7 @@ var _board: Control
 var _side: Control
 var _side_wanted: bool
 var _sideways := -1  # -1 until first arranged, then 0 or 1
+var _spacer: Control  ## sideways: fills the column when the side panel is not shown
 
 
 func _init(board: Control, side_panel: Control = null, side_wanted: bool = false) -> void:
@@ -75,11 +76,21 @@ func _arrange() -> void:
 		_sideways = sideways
 		_rebuild(sideways == 1, room)
 	if _side != null:
-		_side.visible = _side_wanted and (sideways == 1 or room.x >= SIDE_PANEL_MIN_WIDTH)
+		_side.visible = side_panel_shown()
+		if _spacer != null:
+			_spacer.visible = not _side.visible
+
+
+## Whether the side panel is on screen: wanted, and not on a phone-sized screen (there it would leave
+## the board too little room, and its rows too little to be read: the screen offers it full-screen).
+func side_panel_shown() -> bool:
+	var room := Ui.usable_size()
+	return _side != null and _side_wanted and not Ui.is_compact() and room.x >= SIDE_PANEL_MIN_WIDTH
 
 
 ## Moves the parts into a fresh set of containers for the chosen arrangement.
 func _rebuild(sideways: bool, room: Vector2) -> void:
+	_spacer = null
 	for part: Control in [_bar, _board, _side, buttons]:
 		if part != null and part.get_parent() != null:
 			part.get_parent().remove_child(part)
@@ -93,15 +104,15 @@ func _rebuild(sideways: bool, room: Vector2) -> void:
 		row.add_child(_board)
 		var column := VBoxContainer.new()
 		column.add_theme_constant_override("separation", 8)
-		column.custom_minimum_size.x = clampf(room.x * 0.36, 240.0, 340.0)
+		column.custom_minimum_size.x = clampf(room.x * 0.3, 220.0, 320.0)
 		row.add_child(column)
 		column.add_child(_bar)
 		var spacer := Control.new()  # pushes the buttons down when there is no side panel to fill the space
 		spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		_spacer = spacer
 		if _side != null:
 			_side.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			column.add_child(_side)
-			spacer.visible = not _side_wanted
 		column.add_child(spacer)
 		column.add_child(buttons)
 	else:

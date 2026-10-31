@@ -17,6 +17,7 @@ var _layout: GameLayout
 var _view: RealmView
 var _battle: BattlePanel
 var _players: PlayerPanel
+var _players_view: PlayersOverlay  ## the players full-screen, while open
 var _end: EndOverlay
 var _status: Label
 var _gods_line: Label
@@ -130,6 +131,11 @@ func _build_ui() -> void:
 		_icon(b, {"smite": "smite", "bless": "bless", "ward": "ward"}[m["kind"]])
 		b.tooltip_text = g["boon_text"]
 		_miracle_buttons[god_id] = b
+	# On a phone the player list does not fit beside the board: it opens full-screen instead.
+	var players := _layout.add_button("Players", _show_players)
+	players.tooltip_text = "Every player, their lands, dice and gods"
+	Ui.on_resize(players, func() -> void: players.visible = not _layout.side_panel_shown())
+	_players.god_pressed.connect(_show_god)
 	var center := _layout.add_button("Re-centre", func() -> void: _view.reset_view())
 	center.tooltip_text = "Zoom: mouse wheel or pinch. Pan: drag."
 	_layout.add_button("Leave", _leave)
@@ -527,6 +533,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Every player full-screen (the Players button).
+func _show_players() -> void:
+	_players_view = PlayersOverlay.new(state, human)
+	add_child(_players_view)
+
+
+## A god's page over the war (a portrait in the player list clicked).
+func _show_god(god_id: String) -> void:
+	add_child(GodOverlay.new(god_id))
+
+
+## A phone's back gesture (AppWindow): closes the page open over the war, else leaves the war.
+func go_back() -> void:
+	if ScreenOverlay.close_top(self) == null:
+		_leave()
+
+
 func _leave() -> void:
 	if online != null:
 		_leave_online()
@@ -547,6 +570,8 @@ func _update_hud() -> void:
 	if _players == null:
 		return
 	_players.update(state)
+	if is_instance_valid(_players_view):
+		_players_view.refresh()
 	var mine := _human_turn()
 	if _end_turn != null and is_instance_valid(_end_turn):
 		_end_turn.disabled = not mine

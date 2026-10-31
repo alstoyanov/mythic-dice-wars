@@ -221,7 +221,7 @@ func _god_tile(parent: Control, g: Dictionary, w: float) -> void:
 	b.focus_mode = Control.FOCUS_NONE
 	b.tooltip_text = "%s, %s" % [g["name"], g["title"]]
 	var box := _inside(b, 9.0)
-	var pic := _portrait(g["id"])
+	var pic := GodView.portrait(g["id"])
 	pic.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(pic)
 	var name_label := _label(box, g["name"], 15, Color.WHITE)
@@ -235,39 +235,7 @@ func _god_tile(parent: Control, g: Dictionary, w: float) -> void:
 # ───────────────────────── page 3: a god ─────────────────────────
 
 func _build_god() -> void:
-	var g := GodCatalog.god(_god)
-	var lore := GodLore.god(_god)
-	var accent: Color = UiTheme.current_palette()["accent"]
-	_title(g["name"])
-	var primary: bool = g["role"] == GodCatalog.PRIMARY
-	_text(_col, "%s · %s god" % [g["title"], "Primary" if primary else "Secondary"], 16, accent, 0.0,
-		HORIZONTAL_ALIGNMENT_CENTER)
-	var room := _room()
-	var narrow := Ui.is_narrow()
-	# The portrait beside the powers on a narrow screen, with the story under both; elsewhere the
-	# portrait beside everything.
-	var side := minf(room * 0.34, 130.0 * _k()) if narrow else minf(room * 0.3, 230.0 * _k())
-	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 14)
-	_col.add_child(body)
-	var pic := _portrait(_god)
-	pic.custom_minimum_size = Vector2(side, side * (1.0 if narrow else 1.25))
-	pic.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	body.add_child(pic)
-	var text_w := room - side - 14.0
-	var facts := VBoxContainer.new()
-	facts.add_theme_constant_override("separation", 4)
-	body.add_child(facts)
-	_text(facts, "%s: %s" % [g["boon_name"], g["boon_text"]], 15, Color(0.75, 1.0, 0.75), text_w)
-	if g.has("bane_name"):
-		_text(facts, "%s: %s" % [g["bane_name"], g["bane_text"]], 15, Color(1.0, 0.65, 0.6), text_w)
-	var story := facts if not narrow else _col
-	var story_w := text_w if not narrow else room
-	if not narrow:
-		facts.add_theme_constant_override("separation", 8)
-	_text(story, str(lore.get("lore", "")), 16, Color.WHITE, story_w)
-	if str(lore.get("did_you_know", "")) != "":
-		_text(story, "Did you know? " + str(lore["did_you_know"]), 15, Color(1, 1, 1, 0.75), story_w)
+	GodView.build(_col, _god, _k(), _fit, _room(), Ui.is_narrow())
 	_buttons(true)
 
 
@@ -294,10 +262,7 @@ func _buttons(play: bool) -> void:
 
 
 func _title(text: String) -> void:
-	Ui.title(_col, text)
-	if _fit < 1.0:  # the title shrinks with the page
-		var l := _col.get_child(_col.get_child_count() - 1) as Label
-		l.add_theme_font_size_override("font_size", roundi(l.get_theme_font_size("font_size") * maxf(_fit, 0.8)))
+	GodView.title(_col, text, _fit)
 
 
 ## A box inside a button, clear of its frame.
@@ -314,17 +279,6 @@ func _inside(b: Button, margin: float) -> VBoxContainer:
 	return box
 
 
-func _portrait(god_id: String) -> TextureRect:
-	var pic := TextureRect.new()
-	var path := GodCatalog.portrait_path(god_id)
-	pic.texture = load(path) if ResourceLoader.exists(path) else null
-	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return pic
-
-
 ## A one-line label (sized by the caller).
 func _label(parent: Control, t: String, font_size: int, color: Color) -> Label:
 	var l := Label.new()
@@ -338,19 +292,7 @@ func _label(parent: Control, t: String, font_size: int, color: Color) -> Label:
 	return l
 
 
-## Text that wraps at `width` (0: one line, or wrapped to the panel if longer).
+## Text that wraps at `width` (0: one line, smaller if it is wider than the page).
 func _text(parent: Control, t: String, font_size: int, color: Color, width: float,
 		align := HORIZONTAL_ALIGNMENT_LEFT) -> Label:
-	var l := Label.new()
-	l.text = t
-	l.horizontal_alignment = align
-	l.add_theme_font_size_override("font_size", roundi(font_size * _k()))
-	if color != Color.WHITE:
-		l.add_theme_color_override("font_color", color)
-	parent.add_child(l)
-	if width > 0.0:
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.custom_minimum_size.x = width
-	else:
-		Ui.fit_font(l, roundi(font_size * _k()), _room(), 11)
-	return l
+	return GodView.text(parent, t, font_size, _k(), color, width, _room(), align)

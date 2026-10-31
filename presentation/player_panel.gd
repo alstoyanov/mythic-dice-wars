@@ -2,10 +2,13 @@ class_name PlayerPanel
 extends PanelContainer
 ## Beside the map: one row per player in turn order with their colour, gods, territories, dice, the
 ## reinforcement they would get (largest region), reserve and favour (and in round 1 their head start). The player whose turn it is is
-## framed; an eliminated player is dimmed. Hovering a god's portrait explains their powers.
+## framed; an eliminated player is dimmed. Hovering a god's portrait explains their powers; clicking
+## it asks for the god's page (god_pressed).
 ##
 ## The rows are built once (again only if the players or their gods change); update() only changes
 ## their texts and looks, so it costs next to nothing after every battle (a phone notices).
+
+signal god_pressed(god_id: String)
 
 const PORTRAIT := 34.0
 
@@ -160,6 +163,12 @@ func _portrait() -> _Portrait:
 	out.holder = Control.new()
 	out.holder.custom_minimum_size = Vector2(PORTRAIT, PORTRAIT)
 	out.holder.mouse_filter = Control.MOUSE_FILTER_PASS
+	out.holder.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var holder := out.holder
+	holder.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			god_pressed.emit(str(holder.get_meta("god", "")))
+			holder.accept_event())
 	out.pic = TextureRect.new()
 	out.pic.set_anchors_preset(Control.PRESET_FULL_RECT)
 	out.pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -182,6 +191,7 @@ func _portrait() -> _Portrait:
 
 func _show_god(portrait: _Portrait, god_id: String, awake: bool, conquests: int) -> void:
 	var g := GodCatalog.god(god_id)
+	portrait.holder.set_meta("god", god_id)
 	portrait.pic.texture = _texture(god_id)
 	portrait.pic.modulate = Color.WHITE if awake else Color(0.35, 0.35, 0.4)
 	var asleep := not awake and portrait.eye != null
